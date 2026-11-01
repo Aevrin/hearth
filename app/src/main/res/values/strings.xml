@@ -127,4 +127,37 @@
     <string name="about_body">A small Android launcher.\n\nVibe-coded: written largely by an AI model (Claude) under human direction and testing. Read the code before trusting it with anything important.\n\nFree software under the GNU GPL v3 or later. No ads, no analytics, no network access.</string>
     <string name="source_code">Source code</string>
     <string name="source_url" translatable="false">https://github.com/Aevrin/hearth</string>
+
+    <!-- 0.5: shortcuts, editing, pages, labels -->
+    <string name="pin_title">Add to home screen</string>
+    <string name="pin_add">Add</string>
+    <string name="already_on_home">Already on the home screen</string>
+    <string name="most_used">Most used</string>
+    <string name="all_apps">All apps</string>
+    <string name="pages">Pages</string>
+    <string name="page_add">Add page after this one</string>
+    <string name="page_delete">Delete this page</string>
+    <string name="page_delete_confirm">Delete this page? Its icons move to other pages if there\'s room, and are removed if not.</string>
+    <string name="page_move_left">Move page left</string>
+    <string name="page_move_right">Move page right</string>
+    <string name="page_make_default">Make this the default page</string>
+    <string name="page_is_default">Home button now returns to this page</string>
+    <string name="page_limit">Seven pages is the most</string>
+    <string name="lock_layout">Lock home screen</string>
+    <string name="unlock_layout">Unlock home screen</string>
+    <string name="layout_locked">Home screen locked</string>
+    <string name="layout_unlocked">Home screen unlocked</string>
+    <string name="section_labels">Labels</string>
+    <string name="dock_icon_size">Dock icon size</string>
+    <string name="drawer_icon_size">Drawer icon size</string>
+    <string name="label_size">Label size</string>
+    <string name="label_accent">Labels in accent colour</string>
+    <string name="label_shadow">Label shadow</string>
+    <string name="label_two_lines">Allow two-line labels</string>
+    <string name="dock_pages">Dock pages (swipe the dock)</string>
+    <string name="lock_layout_setting">Lock home screen (no moving or removing)</string>
+    <string name="scroll_wallpaper">Scroll wallpaper with pages</string>
+    <string name="allow_rotation">Allow rotation</string>
+    <string name="az_scroller">A–Z scroller in drawer</string>
+    <string name="most_used_setting">Most used apps at top of drawer</string>
 </resources>

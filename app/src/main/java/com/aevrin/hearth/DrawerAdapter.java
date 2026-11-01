@@ -22,32 +22,45 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * The app drawer grid, filtered by the search box. Hidden apps are left out of
- * the list, and included in search results when the user allows it.
+ * The app drawer grid, filtered by the search box. With no search it can lead
+ * with a "Most used" row; hidden apps are left out of the list, and included in
+ * search results when the user allows it. Section headers span the full width.
  */
-final class DrawerAdapter extends RecyclerView.Adapter<DrawerAdapter.Holder> {
+final class DrawerAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     interface Actions {
         void onAppClick(AppEntry app, View view);
         void onAppLongClick(AppEntry app, View view);
     }
 
+    private static final int TYPE_APP = 0;
+    private static final int TYPE_HEADER = 1;
+
     private final AppRepository repo;
     private final Actions actions;
     private final Prefs prefs;
 
     private List<AppEntry> all = new ArrayList<>();
-    private final List<AppEntry> shown = new ArrayList<>();
+    /** AppEntry for apps, String for section headers. */
+    private final List<Object> rows = new ArrayList<>();
     private String query = "";
     private Set<String> hidden = Collections.emptySet();
     private boolean hiddenSearchable = true;
     private boolean showLabels = true;
+    private boolean mostUsed = true;
+    private int columns = 5;
     private int iconPx;
+    private String mostUsedTitle = "Most used", allTitle = "All apps";
 
     DrawerAdapter(AppRepository repo, Prefs prefs, Actions actions) {
         this.repo = repo;
         this.prefs = prefs;
         this.actions = actions;
+    }
+
+    void setTitles(String mostUsed, String all) {
+        mostUsedTitle = mostUsed;
+        allTitle = all;
     }
 
     /** The name shown for an app: the user's rename if any, else its own label. */
@@ -63,43 +76,99 @@ final class DrawerAdapter extends RecyclerView.Adapter<DrawerAdapter.Holder> {
         collator.setStrength(Collator.PRIMARY);
         sorted.sort((a, b) -> collator.compare(labelOf(a), labelOf(b)));
         all = sorted;
-        refilter();
+        rebuild();
     }
 
-    /** Re-reads hidden apps, labels and sizes from settings. */
-    void applyPrefs(int iconPx) {
+    /** Re-reads hidden apps, labels, sizes and the most-used row from settings. */
+    void applyPrefs(int iconPx, int columns) {
         this.hidden = prefs.hidden();
         this.hiddenSearchable = prefs.hiddenSearchable();
         this.showLabels = prefs.drawerLabels();
+        this.mostUsed = prefs.mostUsed();
         this.iconPx = iconPx;
+        this.columns = columns;
         setApps(all);
     }
 
     void setQuery(String q) {
         query = fold(q.trim());
-        refilter();
+        rebuild();
+    }
+
+    boolean isSearching() { return !query.isEmpty(); }
+
+    boolean isHeader(int position) {
+        return position >= 0 && position < rows.size() && rows.get(position) instanceof String;
     }
 
     /** The first match, for launching straight from the keyboard's Go key. */
     AppEntry first() {
-        return shown.isEmpty() ? null : shown.get(0);
+        for (Object o : rows) if (o instanceof AppEntry) return (AppEntry) o;
+        return null;
+    }
+
+    /** First letters present in the full list, in order, for the A–Z strip. */
+    List<String> letters() {
+        List<String> out = new ArrayList<>();
+        for (Object o : rows) {
+            if (!(o instanceof AppEntry)) continue;
+            String l = letterOf((AppEntry) o);
+            if (out.isEmpty() || !out.get(out.size() - 1).equals(l)) {
+                if (!out.contains(l)) out.add(l);
+            }
+        }
+        return out;
+    }
+
+    /** Position of the first app under a letter, after the most-used section. */
+    int positionFor(String letter) {
+        int start = 0;
+        for (int i = 0; i < rows.size(); i++) if (allTitle.equals(rows.get(i))) start = i;
+        for (int i = start; i < rows.size(); i++) {
+            Object o = rows.get(i);
+            if (o instanceof AppEntry && letterOf((AppEntry) o).equals(letter)) return i;
+        }
+        return -1;
+    }
+
+    private String letterOf(AppEntry e) {
+        String n = fold(labelOf(e));
+        if (n.isEmpty()) return "#";
+        char c = Character.toUpperCase(n.charAt(0));
+        return Character.isLetter(c) ? String.valueOf(c) : "#";
     }
 
     @SuppressWarnings("NotifyDataSetChanged") // the whole list changes on every keystroke anyway
-    private void refilter() {
-        shown.clear();
+    private void rebuild() {
+        rows.clear();
         if (query.isEmpty()) {
-            for (AppEntry e : all) if (!hidden.contains(e.key)) shown.add(e);
+            List<AppEntry> visible = new ArrayList<>();
+            for (AppEntry e : all) if (!hidden.contains(e.key)) visible.add(e);
+            List<AppEntry> top = new ArrayList<>();
+            if (mostUsed) {
+                for (String key : prefs.mostLaunched(columns, 2)) {
+                    AppEntry e = repo.find(key);
+                    if (e != null && !hidden.contains(e.key)) top.add(e);
+                }
+            }
+            if (!top.isEmpty() && visible.size() > columns * 2) {
+                rows.add(mostUsedTitle);
+                rows.addAll(top);
+                rows.add(allTitle);
+            }
+            rows.addAll(visible);
         } else {
             // Names starting with the query first, then names containing it.
+            List<AppEntry> starts = new ArrayList<>();
             List<AppEntry> contains = new ArrayList<>();
             for (AppEntry e : all) {
                 if (hidden.contains(e.key) && !hiddenSearchable) continue;
                 String name = fold(labelOf(e));
-                if (name.startsWith(query)) shown.add(e);
+                if (name.startsWith(query)) starts.add(e);
                 else if (name.contains(query) || fold(e.label).contains(query)) contains.add(e);
             }
-            shown.addAll(contains);
+            rows.addAll(starts);
+            rows.addAll(contains);
         }
         notifyDataSetChanged();
     }
@@ -110,19 +179,42 @@ final class DrawerAdapter extends RecyclerView.Adapter<DrawerAdapter.Holder> {
         return n.toLowerCase(Locale.ROOT);
     }
 
+    @Override
+    public int getItemViewType(int position) {
+        return isHeader(position) ? TYPE_HEADER : TYPE_APP;
+    }
+
     @NonNull
     @Override
-    public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+    public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        if (viewType == TYPE_HEADER) {
+            TextView t = new TextView(parent.getContext());
+            float d = parent.getResources().getDisplayMetrics().density;
+            t.setPadding(Math.round(12 * d), Math.round(14 * d), 0, Math.round(6 * d));
+            t.setTextSize(13);
+            t.setLayoutParams(new RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            return new RecyclerView.ViewHolder(t) { };
+        }
         View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_icon, parent, false);
         return new Holder(v);
     }
 
     @Override
-    public void onBindViewHolder(@NonNull Holder h, int position) {
-        AppEntry e = shown.get(position);
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder vh, int position) {
+        Object row = rows.get(position);
+        if (row instanceof String) {
+            TextView t = (TextView) vh.itemView;
+            t.setText((String) row);
+            t.setTextColor(prefs.accent());
+            return;
+        }
+        Holder h = (Holder) vh;
+        AppEntry e = (AppEntry) row;
         String name = labelOf(e);
         h.app = e;
         h.label.setText(name);
+        prefs.styleLabel(h.label);
         h.label.setVisibility(showLabels ? View.VISIBLE : View.GONE);
         h.itemView.setContentDescription(name);
         if (iconPx > 0) {
@@ -139,7 +231,7 @@ final class DrawerAdapter extends RecyclerView.Adapter<DrawerAdapter.Holder> {
 
     @Override
     public int getItemCount() {
-        return shown.size();
+        return rows.size();
     }
 
     static final class Holder extends RecyclerView.ViewHolder {

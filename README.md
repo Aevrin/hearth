@@ -10,61 +10,77 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 - Free software under the [GNU GPL v3 or later](LICENSE).
 - Android 13+.
 
-## Status: Phase 4 (icons and folders)
+## Status: 0.5 (editing, shortcuts, polish)
 
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Home screen grid, app drawer with search | Done |
 | 2 | Dock, clock, theming, default-home prompt | Done |
 | 3 | Configuration: grid, pages, icons, labels, renaming, hidden apps, clock, backup | Done (gestures later) |
-| 4 | Generated icon themes, per-app icon styles, folders | **In progress** |
+| 4 | Generated icon themes, per-app icon styles, folders | Done |
+| 0.5 | App shortcuts, drag from drawer, smarter drops, page management, label styling | **In testing** |
 | 4b | Notification dots, icon packs (maybe) | Planned |
 | 5 | Widgets | Planned |
 
 ### What works now
 
-- **Home screen:** a clock, one or more pages of pinned apps, and a dock, over your wallpaper.
-  - Tap to open. Long-press and **drag** to move, including between the grid and the dock;
-    dropping on an empty cell moves it. Hold a dragged icon at the left or right edge to
-    carry it to the next page.
-  - Swipe sideways to change page (dots show where you are). Home returns to page one.
-  - **Folders:** drop an app onto another app to make a folder, or onto a folder to add it.
-    Tap a folder to open it as a compact panel right above it; tap its name to rename it. Long-press an app inside for Move to
-    home screen, Remove from folder, Rename, Change icon, App info, Uninstall. Long-press a
-    folder without moving for Open, Rename, Ungroup, Remove. A folder left with one app turns
-    back into that app.
-  - Drag onto **Remove** at the top to unpin. Long-press an app without moving for a menu
-    (Rename, Change icon, Remove, App info, Uninstall).
-  - Long-press empty space for a menu where you pressed: All apps, Wallpaper, Hearth settings.
+- **Home screen:** a clock, one or more pages of apps, shortcuts and folders, and a dock, over your wallpaper.
+  - Tap to open. Long-press and **drag** to move, including between the grid, the dock and pages
+    (hold a dragged icon at the left or right edge to flip page).
+  - The cell under your finger lights up to show what a drop will do: a plain fill moves it there,
+    a ring (dropping on the middle of an icon) makes or joins a **folder**, and a bar (dropping on
+    the edge of an icon) **slides the others along** to make room.
+  - While dragging, a bar at the top offers **Remove**, **App info** and **Uninstall**.
+  - Long-press an app without moving for its menu: the app's own **shortcuts** first (e.g. "New
+    message"), then Rename, Change icon, Remove, App info, Uninstall.
+  - **Pinned shortcuts:** when another app offers "Add to home screen" (a contact, a site, a
+    playlist), Hearth asks and places it on your default page.
+  - **Folders:** tap to open as a compact panel right above the folder; tap the name to rename it.
+    Long-press inside for Move to home screen, Remove from folder, Rename, Change icon, App info,
+    Uninstall. A folder left with one app turns back into that app.
+  - Long-press empty space for a menu where you pressed: All apps, Wallpaper, Hearth settings,
+    **Pages** (add, delete, move left/right, make default), and **Lock home screen**.
+  - Swipe sideways to change page; the wallpaper scrolls with you (optional). Home returns to your
+    default page.
   - Tap the clock to open your alarms.
-- **Dock:** a row of label-less icons on a translucent bar. When the dock is hidden, an
-  arrow at the bottom opens the drawer instead.
+- **Dock:** label-less icons on a translucent bar, with up to three **dock pages** you swipe
+  across the dock itself. When the dock is hidden, an arrow at the bottom opens the drawer.
 - **App drawer:** swipe up anywhere on the home screen.
-  - Alphabetical grid with a search box. Matches ignore case and accents, and names
-    that *start* with your search come first. The keyboard's Go key opens the top match.
-  - Long-press an app: Add to home screen, Add to dock, Rename, Change icon, Hide, App info,
-    Uninstall.
+  - Alphabetical grid with a search box and an **A–Z strip** down the side. Matches ignore case
+    and accents, and names that *start* with your search come first. Go opens the top match.
+  - A **Most used** row at the top (optional), learned on the phone only.
+  - Long-press and drag an app out to place it on the home screen, dock or a folder; let go
+    without moving for its menu (shortcuts, Add to home/dock, Rename, Change icon, Hide, App info,
+    Uninstall).
   - Swipe down at the top of the list, Back, or Home closes it.
 - **Settings** (long-press empty home space → Hearth settings):
-  - **Home app:** whether Hearth is the default, with a button to make it so. Hearth also
-    asks once, the first time it's opened while it isn't.
-  - **Appearance:** accent colour (presets or any colour via a picker; the clock follows it),
-    drawer and dock background opacity (a see-through drawer shows only the wallpaper), icon size,
-    labels on/off for the home screen and the drawer.
+  - **Home app:** whether Hearth is the default, with a button to make it so.
+  - **Appearance:** accent colour (presets or any colour), drawer and dock opacity, and separate
+    icon sizes for the home screen, dock and drawer.
+  - **Labels:** on/off for home and drawer, size, accent colour, shadow, two lines.
   - **Icons:** generated on the phone from each app's own icon, with a live preview.
-    Styles: Original, Themed (the app's glyph in your accent colour on a dark plate, using its
-    monochrome icon when it has one and an approximate silhouette when not), Duotone,
-    Grayscale, Letters. Shapes: phone default, circle, squircle, rounded square, square,
-    teardrop. Any app can have its own style via long-press → Change icon.
-  - **Clock:** show/hide, date on/off, seconds on/off, phone / 12-hour / 24-hour.
-  - **Layout:** home columns (3–8), rows (3–9), pages (1–7), dock on/off and slots (3–7),
-    drawer columns (3–7). Shrinking never deletes apps: ones that don't fit move to a free
-    spot, or wait out of sight until there's room.
-  - **Apps:** pick hidden apps; choose whether they still show up in search.
+    Styles: Original, Themed, Duotone, Grayscale, Letters. Shapes: phone default, circle,
+    squircle, rounded square, square, teardrop. Per-app overrides via long-press → Change icon.
+    Generated icons are cached on disk so they appear instantly after a restart.
+  - **Clock:** show/hide, date, seconds, phone / 12-hour / 24-hour.
+  - **Layout:** home columns (3–8), rows (3–9), pages (1–7), dock on/off, slots (3–7) and pages
+    (1–3), drawer columns (3–7), lock home screen, scroll wallpaper, allow rotation. Shrinking
+    never deletes apps.
+  - **Apps:** hidden apps and whether search finds them; A–Z strip and Most used on/off.
   - **Backup:** save every setting plus the home layout to a JSON file, and restore it.
 - Renamed apps keep their new name everywhere, and search finds both names.
 - Work-profile apps are included, with the usual briefcase badge.
 - Installs, updates and uninstalls show up straight away.
+
+### Roadmap / ideas
+
+- Notification dots; maybe icon packs.
+- Widgets.
+- Gestures (double-tap to lock, swipe down for notifications).
+- **A web page as a home screen:** a page of the home screen (or its own screen) that shows a
+  chosen web page, such as a self-hosted dashboard. This needs the internet permission, so it
+  would be opt-in, possibly as a separate build.
+- Lots of small visual polish.
 
 The home, dock and folder layout is saved as readable JSON in the app's private storage (`files/home.json`).
 

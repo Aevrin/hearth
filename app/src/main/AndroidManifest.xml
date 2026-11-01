@@ -44,5 +44,17 @@
             android:exported="false"
             android:label="@string/settings"
             android:theme="@style/HearthSettingsTheme" />
+
+        <!-- Other apps asking to pin a shortcut (websites, contacts, map destinations). -->
+        <activity
+            android:name=".PinShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:taskAffinity=""
+            android:theme="@style/HearthDialogTheme">
+            <intent-filter>
+                <action android:name="android.content.pm.action.CONFIRM_PIN_SHORTCUT" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

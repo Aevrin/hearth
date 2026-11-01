@@ -16,28 +16,33 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * Which app sits in which cell of which home page, or in the dock. Saved as
- * readable JSON in the app's private storage (files/home.json).
+ * What sits where: home pages, dock pages and folders. Saved as readable JSON
+ * in the app's private storage (files/home.json).
  *
- * Nothing is ever dropped when the grid shrinks: an item that no longer fits
- * moves to the nearest free cell, and if there is none it keeps its old
- * position, hidden, until the grid grows again.
+ * Keys are app keys, "folder:<id>" or "shortcut:<...>" (see Shortcuts). Nothing
+ * is ever dropped when the grid shrinks: an item that no longer fits moves to the
+ * nearest free cell, and if there is none it keeps its old position, hidden,
+ * until there's room again.
  */
 final class HomeLayout {
 
     private static final String TAG = "HomeLayout";
-    // v1: home only. v2: + container. v3: + page. v4: + folders. Older files load as-is.
-    private static final int VERSION = 4;
-    static final String FOLDER_PREFIX = "folder:";
+    // v1 home only · v2 +container · v3 +page · v4 +folders · v5 dock pages. Older files load as-is.
+    private static final int VERSION = 5;
 
     static final String HOME = "home";
     static final String DOCK = "dock";
+    static final String FOLDER_PREFIX = "folder:";
 
     static final class Item {
-        /** An app key, or FOLDER_PREFIX + folder id. */
+        /** An app key, a shortcut key, or FOLDER_PREFIX + folder id. */
         String key;
         String container;
         int page, x, y;
@@ -46,7 +51,7 @@ final class HomeLayout {
         }
     }
 
-    /** A named group of apps occupying one cell. */
+    /** A named group of apps and shortcuts occupying one cell. */
     static final class Folder {
         final String id;
         String name;
@@ -55,9 +60,9 @@ final class HomeLayout {
     }
 
     private final File file;
-    private int columns, rows, pages, dockSlots;
+    private int columns, rows, pages, dockSlots, dockPages;
     private final List<Item> items = new ArrayList<>();
-    private final java.util.Map<String, Folder> folders = new java.util.LinkedHashMap<>();
+    private final Map<String, Folder> folders = new LinkedHashMap<>();
 
     private HomeLayout(File file) {
         this.file = file;
@@ -67,12 +72,18 @@ final class HomeLayout {
         return new File(dir, "home.json");
     }
 
-    static HomeLayout load(File dir, int columns, int rows, int pages, int dockSlots) {
+    /** Loads with the dimensions currently set in Prefs. */
+    static HomeLayout load(File dir, Prefs p) {
+        return load(dir, p.columns(), p.rows(), p.pages(), p.dockSlots(), p.dockPages());
+    }
+
+    static HomeLayout load(File dir, int columns, int rows, int pages, int dockSlots, int dockPages) {
         HomeLayout layout = new HomeLayout(fileIn(dir));
         layout.columns = columns;
         layout.rows = rows;
         layout.pages = pages;
         layout.dockSlots = dockSlots;
+        layout.dockPages = dockPages;
         if (layout.file.isFile()) {
             try {
                 String text = new String(Files.readAllBytes(layout.file.toPath()), StandardCharsets.UTF_8);
@@ -93,11 +104,10 @@ final class HomeLayout {
                     String c = DOCK.equals(o.optString("container")) ? DOCK : HOME;
                     String key = o.getString("key");
                     if (isFolderKey(key) && !layout.folders.containsKey(folderId(key))) continue;
-                    layout.items.add(new Item(key, c,
-                            Math.max(0, o.optInt("page", 0)), o.getInt("x"), o.getInt("y")));
+                    layout.items.add(new Item(key, c, o.optInt("page", 0), o.getInt("x"), o.getInt("y")));
                 }
                 // Folders nothing points at are leftovers; drop them.
-                java.util.Set<String> used = new java.util.HashSet<>();
+                Set<String> used = new HashSet<>();
                 for (Item it : layout.items) if (isFolderKey(it.key)) used.add(folderId(it.key));
                 layout.folders.keySet().retainAll(used);
             } catch (IOException | JSONException e) {
@@ -112,6 +122,7 @@ final class HomeLayout {
     int rows() { return rows; }
     int pages() { return pages; }
     int dockSlots() { return dockSlots; }
+    int dockPages() { return dockPages; }
 
     List<Item> items() { return items; }
 
@@ -120,25 +131,173 @@ final class HomeLayout {
         return true;
     }
 
-    /** True when the cell exists in the current grid. */
+    boolean pageIsEmpty(int page) {
+        for (Item it : items) if (HOME.equals(it.container) && it.page == page) return false;
+        return true;
+    }
+
+    /** True when the cell exists in the current grid (home page or dock page). */
     boolean fits(String container, int page, int x, int y) {
-        if (DOCK.equals(container)) return y == 0 && x >= 0 && x < dockSlots;
+        if (DOCK.equals(container)) return page >= 0 && page < dockPages && y == 0 && x >= 0 && x < dockSlots;
         return page >= 0 && page < pages && x >= 0 && y >= 0 && x < columns && y < rows;
     }
 
+    private int cols(String container) { return DOCK.equals(container) ? dockSlots : columns; }
+    private int rowsOf(String container) { return DOCK.equals(container) ? 1 : rows; }
+    private int pagesOf(String container) { return DOCK.equals(container) ? dockPages : pages; }
+
     Item at(String container, int page, int x, int y) {
         for (Item it : items) {
-            if (!it.container.equals(container) || it.x != x || it.y != y) continue;
-            if (DOCK.equals(container) || it.page == page) return it;
+            if (it.container.equals(container) && it.page == page && it.x == x && it.y == y) return it;
         }
         return null;
     }
 
-    /** Whether the app is pinned anywhere: home, dock, or inside a folder. */
+    /** Whether the key is pinned anywhere: home, dock, or inside a folder. */
     boolean contains(String key) {
         for (Item it : items) if (it.key.equals(key)) return true;
         for (Folder f : folders.values()) if (f.apps.contains(key)) return true;
         return false;
+    }
+
+    /** Every key on the home screen, dock and in folders (for pinned-shortcut bookkeeping). */
+    Set<String> allKeys() {
+        Set<String> s = new HashSet<>();
+        for (Item it : items) if (!isFolderKey(it.key)) s.add(it.key);
+        for (Folder f : folders.values()) s.addAll(f.apps);
+        return s;
+    }
+
+    /** First free cell as {page, x, y}, trying the preferred page first; null when full. */
+    int[] firstFree(String container, int preferredPage) {
+        int n = pagesOf(container);
+        for (int i = 0; i < n; i++) {
+            int p = (Math.max(0, preferredPage) + i) % n;
+            for (int y = 0; y < rowsOf(container); y++) {
+                for (int x = 0; x < cols(container); x++) {
+                    if (at(container, p, x, y) == null) return new int[] {p, x, y};
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Puts the key in the first free cell. Returns false when there's no room. */
+    boolean add(String key, String container, int preferredPage) {
+        int[] cell = firstFree(container, preferredPage);
+        if (cell == null) return false;
+        items.add(new Item(key, container, cell[0], cell[1], cell[2]));
+        save();
+        return true;
+    }
+
+    /** Puts a new key at a specific free cell (drag from the drawer). */
+    void addAt(String key, String container, int page, int x, int y) {
+        if (!fits(container, page, x, y) || at(container, page, x, y) != null) return;
+        items.add(new Item(key, container, page, x, y));
+        save();
+    }
+
+    /** Moves an item, possibly to the other container or page; if the target is taken, they swap. */
+    void move(Item item, String container, int page, int x, int y) {
+        if (!fits(container, page, x, y)) return;
+        Item other = at(container, page, x, y);
+        if (other == item) return;
+        if (other != null) {
+            other.container = item.container;
+            other.page = item.page;
+            other.x = item.x;
+            other.y = item.y;
+        }
+        item.container = container;
+        item.page = page;
+        item.x = x;
+        item.y = y;
+        save();
+    }
+
+    /**
+     * Drops `dragged` (or a new item for `key` when dragged is null) at a cell,
+     * sliding the icons from there onward along by one, in reading order, into the
+     * next free cell (or back toward the previous one). Returns false if the
+     * page is full, in which case nothing changes.
+     */
+    boolean insertAt(Item dragged, String key, String container, int page, int x, int y) {
+        if (!fits(container, page, x, y)) return false;
+        int cols = cols(container), n = cols * rowsOf(container);
+        Item[] occ = new Item[n];
+        for (Item it : items) {
+            if (it == dragged || !it.container.equals(container) || it.page != page) continue;
+            if (it.x < cols && it.y < rowsOf(container)) occ[it.y * cols + it.x] = it;
+        }
+        int target = y * cols + x;
+        int empty = -1;
+        for (int i = target; i < n; i++) if (occ[i] == null) { empty = i; break; }
+        if (empty >= 0) {
+            for (int i = empty; i > target; i--) place(occ[i - 1], i, cols);
+        } else {
+            for (int i = target; i >= 0; i--) if (occ[i] == null) { empty = i; break; }
+            if (empty < 0) return false;
+            for (int i = empty; i < target; i++) place(occ[i + 1], i, cols);
+        }
+        if (dragged != null) {
+            dragged.container = container;
+            dragged.page = page;
+            dragged.x = x;
+            dragged.y = y;
+        } else {
+            items.add(new Item(key, container, page, x, y));
+        }
+        save();
+        return true;
+    }
+
+    private static void place(Item it, int index, int cols) {
+        it.x = index % cols;
+        it.y = index / cols;
+    }
+
+    void remove(Item item) {
+        items.remove(item);
+        if (isFolderKey(item.key)) folders.remove(folderId(item.key));
+        save();
+    }
+
+    /* ---------- pages ---------- */
+
+    /** Adds an empty home page at `index`, shifting later pages along. */
+    void insertPage(int index) {
+        index = Math.max(0, Math.min(pages, index));
+        for (Item it : items) if (HOME.equals(it.container) && it.page >= index) it.page++;
+        pages++;
+        save();
+    }
+
+    /**
+     * Deletes a home page. Its icons move to free cells on other pages; any that
+     * don't fit wait, hidden, until there's room. Never deletes the last page.
+     */
+    void deletePage(int index) {
+        if (pages <= 1 || index < 0 || index >= pages) return;
+        for (Item it : items) {
+            if (!HOME.equals(it.container)) continue;
+            if (it.page == index) it.page = -1; // homeless; reflow re-homes it
+            else if (it.page > index) it.page--;
+        }
+        pages--;
+        reflow();
+        save();
+    }
+
+    /** Swaps two home pages. */
+    void swapPages(int a, int b) {
+        if (a < 0 || b < 0 || a >= pages || b >= pages || a == b) return;
+        for (Item it : items) {
+            if (!HOME.equals(it.container)) continue;
+            if (it.page == a) it.page = b;
+            else if (it.page == b) it.page = a;
+        }
+        save();
     }
 
     /* ---------- folders ---------- */
@@ -160,22 +319,25 @@ final class HomeLayout {
         return null;
     }
 
-    /** Turns `target` (an app) into a folder holding it and `dragged`, which leaves its cell. */
-    Folder createFolder(Item target, Item dragged, String name) {
+    /**
+     * Turns `target` into a folder holding its key plus `key`. If the key came from
+     * another cell (`dragged`), that cell is freed.
+     */
+    Folder createFolder(Item target, String key, Item dragged, String name) {
         Folder f = new Folder(Long.toString(System.currentTimeMillis(), 36), name);
         f.apps.add(target.key);
-        f.apps.add(dragged.key);
+        f.apps.add(key);
         folders.put(f.id, f);
         target.key = FOLDER_PREFIX + f.id;
-        items.remove(dragged);
+        if (dragged != null) items.remove(dragged);
         save();
         return f;
     }
 
-    /** Moves an app item into an existing folder. */
-    void addToFolder(Folder f, Item dragged) {
-        if (!f.apps.contains(dragged.key)) f.apps.add(dragged.key);
-        items.remove(dragged);
+    /** Adds a key to a folder; frees the dragged item's cell if it came from one. */
+    void addToFolder(Folder f, String key, Item dragged) {
+        if (!f.apps.contains(key)) f.apps.add(key);
+        if (dragged != null) items.remove(dragged);
         save();
     }
 
@@ -185,24 +347,18 @@ final class HomeLayout {
     }
 
     /**
-     * Takes an app out of a folder and puts it on the home screen (same page if
-     * possible). A folder left with one app turns back into that app.
-     * Returns false if there was no free cell, in which case nothing changes.
+     * Takes a key out of a folder onto the home screen (same page if possible). A
+     * folder left with one entry turns back into that entry. Returns false if
+     * there was no free cell, in which case nothing changes.
      */
-    boolean moveOutOfFolder(Folder f, String appKey) {
+    boolean moveOutOfFolder(Folder f, String key) {
         Item folderItem = itemFor(f);
         if (folderItem == null) return false;
-        if (f.apps.size() > 2) {
-            int[] cell = firstFree(HOME, folderItem.page);
-            if (cell == null) return false;
-            f.apps.remove(appKey);
-            items.add(new Item(appKey, HOME, cell[0], cell[1], cell[2]));
-        } else {
-            // Two apps: the folder dissolves; the other app keeps the folder's cell.
-            int[] cell = firstFree(HOME, folderItem.page);
-            if (cell == null) return false;
-            f.apps.remove(appKey);
-            items.add(new Item(appKey, HOME, cell[0], cell[1], cell[2]));
+        int[] cell = firstFree(HOME, HOME.equals(folderItem.container) ? folderItem.page : 0);
+        if (cell == null) return false;
+        f.apps.remove(key);
+        items.add(new Item(key, HOME, cell[0], cell[1], cell[2]));
+        if (f.apps.size() == 1) {
             folderItem.key = f.apps.get(0);
             folders.remove(f.id);
         }
@@ -210,10 +366,10 @@ final class HomeLayout {
         return true;
     }
 
-    /** Removes an app from a folder entirely (back to the drawer only). */
-    void removeFromFolder(Folder f, String appKey) {
+    /** Removes a key from a folder entirely (back to the drawer only). */
+    void removeFromFolder(Folder f, String key) {
         Item folderItem = itemFor(f);
-        f.apps.remove(appKey);
+        f.apps.remove(key);
         if (folderItem != null && f.apps.size() == 1) {
             folderItem.key = f.apps.get(0);
             folders.remove(f.id);
@@ -225,7 +381,7 @@ final class HomeLayout {
     }
 
     /**
-     * Spreads a folder's apps back onto the home screen: the first takes the
+     * Spreads a folder's entries back onto the home screen: the first takes the
      * folder's cell, the rest go to free cells. Returns how many didn't fit
      * (those stay in the drawer only).
      */
@@ -236,7 +392,7 @@ final class HomeLayout {
         folderItem.key = f.apps.get(0);
         int lost = 0;
         for (int i = 1; i < f.apps.size(); i++) {
-            int[] cell = firstFree(HOME, folderItem.page);
+            int[] cell = firstFree(HOME, HOME.equals(folderItem.container) ? folderItem.page : 0);
             if (cell == null) { lost++; continue; }
             items.add(new Item(f.apps.get(i), HOME, cell[0], cell[1], cell[2]));
         }
@@ -244,63 +400,17 @@ final class HomeLayout {
         return lost;
     }
 
-    /** First free cell as {page, x, y}, trying the preferred page first; null when full. */
-    int[] firstFree(String container, int preferredPage) {
-        if (DOCK.equals(container)) {
-            for (int x = 0; x < dockSlots; x++) if (at(DOCK, 0, x, 0) == null) return new int[] {0, x, 0};
-            return null;
-        }
-        for (int i = 0; i < pages; i++) {
-            int p = (preferredPage + i) % pages;
-            for (int y = 0; y < rows; y++) {
-                for (int x = 0; x < columns; x++) {
-                    if (at(HOME, p, x, y) == null) return new int[] {p, x, y};
-                }
-            }
-        }
-        return null;
-    }
-
-    /** Puts the app in the first free cell. Returns false when there's no room. */
-    boolean add(String key, String container, int preferredPage) {
-        int[] cell = firstFree(container, preferredPage);
-        if (cell == null) return false;
-        items.add(new Item(key, container, cell[0], cell[1], cell[2]));
-        save();
-        return true;
-    }
-
-    /** Moves an item, possibly to the other container or page; if the target is taken, they swap. */
-    void move(Item item, String container, int page, int x, int y) {
-        if (!fits(container, page, x, y)) return;
-        Item other = at(container, page, x, y);
-        if (other == item) return;
-        if (other != null) {
-            other.container = item.container;
-            other.page = item.page;
-            other.x = item.x;
-            other.y = item.y;
-        }
-        item.container = container;
-        item.page = DOCK.equals(container) ? 0 : page;
-        item.x = x;
-        item.y = y;
-        save();
-    }
-
-    void remove(Item item) {
-        items.remove(item);
-        if (isFolderKey(item.key)) folders.remove(folderId(item.key));
-        save();
-    }
+    /* ---------- resizing ---------- */
 
     /** New grid dimensions: items that no longer fit are moved, never dropped. */
-    void resize(int columns, int rows, int pages, int dockSlots) {
-        if (columns == this.columns && rows == this.rows && pages == this.pages && dockSlots == this.dockSlots) return;
+    void resize(int columns, int rows, int pages, int dockSlots, int dockPages) {
+        if (columns == this.columns && rows == this.rows && pages == this.pages
+                && dockSlots == this.dockSlots && dockPages == this.dockPages) return;
         this.columns = columns;
         this.rows = rows;
         this.pages = pages;
         this.dockSlots = dockSlots;
+        this.dockPages = dockPages;
         reflow();
         save();
     }
@@ -314,18 +424,17 @@ final class HomeLayout {
         List<Item> placed = new ArrayList<>();
         List<Item> homeless = new ArrayList<>();
         for (Item it : items) {
-            boolean clash = false;
-            for (Item p : placed) {
-                if (p.container.equals(it.container) && p.x == it.x && p.y == it.y
-                        && (DOCK.equals(it.container) || p.page == it.page)) { clash = true; break; }
+            if (fits(it.container, it.page, it.x, it.y) && !taken(placed, it.container, it.page, it.x, it.y)) {
+                placed.add(it);
+            } else {
+                homeless.add(it);
             }
-            if (!clash && fits(it.container, it.page, it.x, it.y)) placed.add(it); else homeless.add(it);
         }
         for (Item it : homeless) {
-            int[] cell = DOCK.equals(it.container) ? freeAmong(placed, DOCK, 0) : null;
+            int[] cell = DOCK.equals(it.container) ? freeAmong(placed, DOCK, it.page) : null;
             String target = DOCK;
             if (cell == null) {
-                cell = freeAmong(placed, HOME, Math.min(it.page, pages - 1));
+                cell = freeAmong(placed, HOME, HOME.equals(it.container) ? Math.min(it.page, pages - 1) : 0);
                 target = HOME;
             }
             if (cell == null) continue; // no room anywhere: keep it as-is, hidden, until there is
@@ -340,15 +449,12 @@ final class HomeLayout {
     }
 
     private int[] freeAmong(List<Item> placed, String container, int preferredPage) {
-        if (DOCK.equals(container)) {
-            for (int x = 0; x < dockSlots; x++) if (!taken(placed, DOCK, 0, x, 0)) return new int[] {0, x, 0};
-            return null;
-        }
-        for (int i = 0; i < pages; i++) {
-            int p = (Math.max(0, preferredPage) + i) % pages;
-            for (int y = 0; y < rows; y++) {
-                for (int x = 0; x < columns; x++) {
-                    if (!taken(placed, HOME, p, x, y)) return new int[] {p, x, y};
+        int n = pagesOf(container);
+        for (int i = 0; i < n; i++) {
+            int p = (Math.max(0, preferredPage) + i) % n;
+            for (int y = 0; y < rowsOf(container); y++) {
+                for (int x = 0; x < cols(container); x++) {
+                    if (!taken(placed, container, p, x, y)) return new int[] {p, x, y};
                 }
             }
         }
@@ -357,11 +463,12 @@ final class HomeLayout {
 
     private static boolean taken(List<Item> placed, String container, int page, int x, int y) {
         for (Item p : placed) {
-            if (p.container.equals(container) && p.x == x && p.y == y
-                    && (DOCK.equals(container) || p.page == page)) return true;
+            if (p.container.equals(container) && p.page == page && p.x == x && p.y == y) return true;
         }
         return false;
     }
+
+    /* ---------- storage ---------- */
 
     /** The file's contents, for backups. */
     String toJsonString() throws JSONException {
@@ -380,11 +487,12 @@ final class HomeLayout {
         }
         return new JSONObject()
                 .put("version", VERSION)
-                .put("folders", fs)
                 .put("columns", columns)
                 .put("rows", rows)
                 .put("pages", pages)
                 .put("dock_slots", dockSlots)
+                .put("dock_pages", dockPages)
+                .put("folders", fs)
                 .put("items", arr)
                 .toString(2);
     }

@@ -61,6 +61,20 @@ final class Prefs {
     static final String ICON_STYLE = "icon_style";
     static final String ICON_SHAPE = "icon_shape";
     static final String ICON_OVERRIDES = "icon_overrides";
+    static final String DOCK_ICON_SIZE = "dock_icon_size";
+    static final String DRAWER_ICON_SIZE = "drawer_icon_size";
+    static final String LABEL_SIZE = "label_size";
+    static final String LABEL_ACCENT = "label_accent";
+    static final String LABEL_SHADOW = "label_shadow";
+    static final String LABEL_TWO_LINES = "label_two_lines";
+    static final String LOCK_LAYOUT = "lock_layout";
+    static final String DEFAULT_PAGE = "default_page";
+    static final String SCROLL_WALLPAPER = "scroll_wallpaper";
+    static final String ALLOW_ROTATION = "allow_rotation";
+    static final String DOCK_PAGES = "dock_pages";
+    static final String AZ_SCROLLER = "az_scroller";
+    static final String MOST_USED = "most_used";
+    private static final String LAUNCH_COUNTS = "launch_counts"; // not backed up: usage, not settings
     private static final String HOME_PROMPT_SHOWN = "home_prompt_shown"; // not backed up
 
     private final SharedPreferences sp;
@@ -109,6 +123,75 @@ final class Prefs {
     boolean drawerLabels() { return sp.getBoolean(DRAWER_LABELS, true); }
     void setDrawerLabels(boolean v) { sp.edit().putBoolean(DRAWER_LABELS, v).apply(); }
 
+    /** Dock and drawer icon sizes: 0 small, 1 medium, 2 large, like the home one. */
+    int dockIconSize() { return clamp(sp.getInt(DOCK_ICON_SIZE, 1), 0, ICON_SCALES.length - 1); }
+    void setDockIconSize(int v) { sp.edit().putInt(DOCK_ICON_SIZE, clamp(v, 0, ICON_SCALES.length - 1)).apply(); }
+
+    int drawerIconSize() { return clamp(sp.getInt(DRAWER_ICON_SIZE, 1), 0, ICON_SCALES.length - 1); }
+    void setDrawerIconSize(int v) { sp.edit().putInt(DRAWER_ICON_SIZE, clamp(v, 0, ICON_SCALES.length - 1)).apply(); }
+
+    /** Label text: 0 small (11sp), 1 medium (12sp), 2 large (14sp). */
+    int labelSize() { return clamp(sp.getInt(LABEL_SIZE, 1), 0, 2); }
+    void setLabelSize(int v) { sp.edit().putInt(LABEL_SIZE, clamp(v, 0, 2)).apply(); }
+    float labelSp() { return new float[] {11f, 12f, 14f}[labelSize()]; }
+
+    boolean labelAccent() { return sp.getBoolean(LABEL_ACCENT, false); }
+    void setLabelAccent(boolean v) { sp.edit().putBoolean(LABEL_ACCENT, v).apply(); }
+
+    boolean labelShadow() { return sp.getBoolean(LABEL_SHADOW, true); }
+    void setLabelShadow(boolean v) { sp.edit().putBoolean(LABEL_SHADOW, v).apply(); }
+
+    boolean labelTwoLines() { return sp.getBoolean(LABEL_TWO_LINES, false); }
+    void setLabelTwoLines(boolean v) { sp.edit().putBoolean(LABEL_TWO_LINES, v).apply(); }
+
+    /** Applies the label settings to one label. */
+    void styleLabel(android.widget.TextView t) {
+        t.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, labelSp());
+        t.setTextColor(labelAccent() ? accent() : 0xFFE6F0FF);
+        if (labelShadow()) t.setShadowLayer(4f, 0f, 1f, 0xCC000000); else t.setShadowLayer(0f, 0f, 0f, 0);
+        t.setMaxLines(labelTwoLines() ? 2 : 1);
+    }
+
+    /* ---------- behaviour ---------- */
+
+    boolean lockLayout() { return sp.getBoolean(LOCK_LAYOUT, false); }
+    void setLockLayout(boolean v) { sp.edit().putBoolean(LOCK_LAYOUT, v).apply(); }
+
+    /** The page Home returns to, 0-based. */
+    int defaultPage() { return Math.max(0, Math.min(pages() - 1, sp.getInt(DEFAULT_PAGE, 0))); }
+    void setDefaultPage(int v) { sp.edit().putInt(DEFAULT_PAGE, Math.max(0, v)).apply(); }
+
+    boolean scrollWallpaper() { return sp.getBoolean(SCROLL_WALLPAPER, true); }
+    void setScrollWallpaper(boolean v) { sp.edit().putBoolean(SCROLL_WALLPAPER, v).apply(); }
+
+    boolean allowRotation() { return sp.getBoolean(ALLOW_ROTATION, false); }
+    void setAllowRotation(boolean v) { sp.edit().putBoolean(ALLOW_ROTATION, v).apply(); }
+
+    boolean azScroller() { return sp.getBoolean(AZ_SCROLLER, true); }
+    void setAzScroller(boolean v) { sp.edit().putBoolean(AZ_SCROLLER, v).apply(); }
+
+    boolean mostUsed() { return sp.getBoolean(MOST_USED, true); }
+    void setMostUsed(boolean v) { sp.edit().putBoolean(MOST_USED, v).apply(); }
+
+    /** Counts launches made from Hearth itself; no usage-access permission involved. */
+    void recordLaunch(String key) {
+        JSONObject o = jsonPref(LAUNCH_COUNTS);
+        try { o.put(key, o.optInt(key, 0) + 1); } catch (JSONException ignored) { }
+        sp.edit().putString(LAUNCH_COUNTS, o.toString()).apply();
+    }
+
+    /** Most-launched keys, highest first, with at least `min` launches. */
+    java.util.List<String> mostLaunched(int limit, int min) {
+        JSONObject o = jsonPref(LAUNCH_COUNTS);
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        for (Iterator<String> it = o.keys(); it.hasNext(); ) {
+            String k = it.next();
+            if (o.optInt(k, 0) >= min) keys.add(k);
+        }
+        keys.sort((a, b) -> Integer.compare(o.optInt(b, 0), o.optInt(a, 0)));
+        return keys.size() > limit ? keys.subList(0, limit) : keys;
+    }
+
     /* ---------- layout ---------- */
 
     int columns() { return clamp(sp.getInt(COLUMNS, 5), 3, 8); }
@@ -121,6 +204,10 @@ final class Prefs {
     void setPages(int v) { sp.edit().putInt(PAGES, clamp(v, 1, 7)).apply(); }
 
     int dockSlots() { return clamp(sp.getInt(DOCK_SLOTS, 5), 3, 7); }
+
+    /** 1 = a fixed dock; more = a dock you can swipe sideways through. */
+    int dockPages() { return clamp(sp.getInt(DOCK_PAGES, 1), 1, 3); }
+    void setDockPages(int v) { sp.edit().putInt(DOCK_PAGES, clamp(v, 1, 3)).apply(); }
     void setDockSlots(int v) { sp.edit().putInt(DOCK_SLOTS, clamp(v, 3, 7)).apply(); }
 
     int drawerColumns() { return clamp(sp.getInt(DRAWER_COLUMNS, 5), 3, 7); }
@@ -241,6 +328,19 @@ final class Prefs {
         o.put(ICON_STYLE, iconStyle());
         o.put(ICON_SHAPE, iconShape());
         o.put(ICON_OVERRIDES, jsonPref(ICON_OVERRIDES));
+        o.put(DOCK_ICON_SIZE, dockIconSize());
+        o.put(DRAWER_ICON_SIZE, drawerIconSize());
+        o.put(LABEL_SIZE, labelSize());
+        o.put(LABEL_ACCENT, labelAccent());
+        o.put(LABEL_SHADOW, labelShadow());
+        o.put(LABEL_TWO_LINES, labelTwoLines());
+        o.put(LOCK_LAYOUT, lockLayout());
+        o.put(DEFAULT_PAGE, defaultPage());
+        o.put(SCROLL_WALLPAPER, scrollWallpaper());
+        o.put(ALLOW_ROTATION, allowRotation());
+        o.put(DOCK_PAGES, dockPages());
+        o.put(AZ_SCROLLER, azScroller());
+        o.put(MOST_USED, mostUsed());
         return o;
     }
 
@@ -252,10 +352,13 @@ final class Prefs {
             switch (k) {
                 case DRAWER_OPACITY: case DOCK_OPACITY: case COLUMNS: case ROWS: case PAGES:
                 case DOCK_SLOTS: case DRAWER_COLUMNS: case ICON_SIZE:
+                case DOCK_ICON_SIZE: case DRAWER_ICON_SIZE: case LABEL_SIZE: case DEFAULT_PAGE: case DOCK_PAGES:
                     e.putInt(k, o.getInt(k));
                     break;
                 case SHOW_CLOCK: case SHOW_DATE: case SHOW_SECONDS: case SHOW_DOCK: case HOME_LABELS:
                 case DRAWER_LABELS: case HIDDEN_SEARCHABLE:
+                case LABEL_ACCENT: case LABEL_SHADOW: case LABEL_TWO_LINES: case LOCK_LAYOUT:
+                case SCROLL_WALLPAPER: case ALLOW_ROTATION: case AZ_SCROLLER: case MOST_USED:
                     e.putBoolean(k, o.getBoolean(k));
                     break;
                 case CLOCK_FORMAT:

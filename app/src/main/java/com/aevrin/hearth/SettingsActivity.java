@@ -124,8 +124,20 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         slider(R.string.dock_opacity, prefs.dockOpacity(), prefs::setDockOpacity);
         choice(R.string.icon_size, new int[] {R.string.small, R.string.medium, R.string.large},
                 prefs.iconSize(), prefs::setIconSize);
+        choice(R.string.dock_icon_size, new int[] {R.string.small, R.string.medium, R.string.large},
+                prefs.dockIconSize(), prefs::setDockIconSize);
+        choice(R.string.drawer_icon_size, new int[] {R.string.small, R.string.medium, R.string.large},
+                prefs.drawerIconSize(), prefs::setDrawerIconSize);
+
+        // Labels
+        header(R.string.section_labels);
         toggle(R.string.home_labels, prefs.homeLabels(), prefs::setHomeLabels);
         toggle(R.string.drawer_labels, prefs.drawerLabels(), prefs::setDrawerLabels);
+        choice(R.string.label_size, new int[] {R.string.small, R.string.medium, R.string.large},
+                prefs.labelSize(), prefs::setLabelSize);
+        toggle(R.string.label_accent, prefs.labelAccent(), prefs::setLabelAccent);
+        toggle(R.string.label_shadow, prefs.labelShadow(), prefs::setLabelShadow);
+        toggle(R.string.label_two_lines, prefs.labelTwoLines(), prefs::setLabelTwoLines);
 
         // Icons
         header(R.string.section_icons);
@@ -170,7 +182,11 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         stepper(R.string.home_pages, prefs.pages(), 1, 7, prefs::setPages);
         toggle(R.string.show_dock, prefs.showDock(), prefs::setShowDock);
         stepper(R.string.dock_slots, prefs.dockSlots(), 3, 7, prefs::setDockSlots);
+        stepper(R.string.dock_pages, prefs.dockPages(), 1, 3, prefs::setDockPages);
         stepper(R.string.drawer_columns, prefs.drawerColumns(), 3, 7, prefs::setDrawerColumns);
+        toggle(R.string.lock_layout_setting, prefs.lockLayout(), prefs::setLockLayout);
+        toggle(R.string.scroll_wallpaper, prefs.scrollWallpaper(), prefs::setScrollWallpaper);
+        toggle(R.string.allow_rotation, prefs.allowRotation(), prefs::setAllowRotation);
         note(R.string.layout_note);
 
         // Apps
@@ -178,6 +194,8 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         hiddenButton = button(R.string.hidden_apps_loading, v -> showHiddenApps());
         if (repo.isLoaded()) onAppsChanged(); else hiddenButton.setEnabled(false);
         toggle(R.string.hidden_searchable, prefs.hiddenSearchable(), prefs::setHiddenSearchable);
+        toggle(R.string.az_scroller, prefs.azScroller(), prefs::setAzScroller);
+        toggle(R.string.most_used_setting, prefs.mostUsed(), prefs::setMostUsed);
 
         // Backup
         header(R.string.section_backup);

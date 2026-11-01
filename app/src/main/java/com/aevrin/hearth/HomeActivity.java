@@ -4,16 +4,25 @@
  */
 package com.aevrin.hearth;
 
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.WallpaperManager;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.pm.LauncherApps;
+import android.content.pm.ShortcutInfo;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Insets;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Looper;
 import android.provider.AlarmClock;
 import android.text.Editable;
@@ -21,11 +30,12 @@ import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.DragEvent;
 import android.view.GestureDetector;
+import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
+import android.view.Menu;
 import android.view.MotionEvent;
-import android.graphics.Rect;
-import android.view.Gravity;
+import android.view.SubMenu;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -47,20 +57,26 @@ import android.window.OnBackInvokedDispatcher;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.util.List;
+
 /**
- * The home screen: a clock, pages of pinned apps and a dock, over the wallpaper.
- * Swipe up for the app drawer, sideways for other pages. Long-press and drag an
- * icon to move it, including between the grid and the dock, or to the screen's
- * edge to carry it to the next page; drop it on "Remove" to unpin it; long-press
- * without moving for its menu.
+ * The home screen: a clock, pages of apps, shortcuts and folders, and a dock,
+ * over the wallpaper. Swipe up for the app drawer, sideways for pages (or across
+ * the dock for dock pages). Long-press and drag to move things; the cell under
+ * your finger lights up to show whether a drop moves, makes a folder, or slides
+ * the others along. Long-press without moving for a menu.
  */
-public class HomeActivity extends Activity implements AppRepository.Listener, DrawerAdapter.Actions {
+public class HomeActivity extends Activity
+        implements AppRepository.Listener, DrawerAdapter.Actions, FolderPanel.Host {
 
     private static final long EDGE_PAGE_DELAY_MS = 550;
+    private static final int MENU_SHORTCUT_BASE = 1000;
 
     private AppRepository repo;
     private HomeLayout layout;
     private Prefs prefs;
+    private FolderPanel folders;
+    private WallpaperManager wallpaper;
 
     private View homeContent;
     private View clock;
@@ -69,42 +85,46 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
     private CellLayout grid;
     private LinearLayout pageDots;
     private CellLayout dock;
+    private LinearLayout dockDots;
     private ImageView handle;
     private TextView emptyHint;
-    private TextView removeZone;
+    private View dropBar;
+    private TextView dropRemove, dropInfo, dropUninstall;
     private View drawer;
     private EditText search;
     private RecyclerView drawerList;
     private GridLayoutManager drawerGrid;
+    private AlphaScroller alpha;
     private DrawerAdapter adapter;
+    private View popupAnchor;
 
     private GestureDetector gestures;
     private boolean drawerOpen;
     private int currentPage;
-    private int iconPx;
+    private int currentDockPage;
+    private int homeIconPx, dockIconPx, drawerIconPx;
+    private float wallpaperPage;   // animated page position for wallpaper scrolling
+    private float lastTouchX, lastTouchY; // screen coordinates of the latest press
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable pendingEdgeFlip;
     private int pendingEdgeDirection;
+    private final Rect scratch = new Rect();
 
     private final OnBackInvokedCallback closeDrawerOnBack = this::closeDrawer;
-    private final OnBackInvokedCallback closeFolderOnBack = this::closeFolder;
 
-    private View folderOverlay;
-    private View folderCard;
-    private TextView folderTitle;
-    private GridLayout folderGrid;
-    private HomeLayout.Folder openFolder;
-    private final Rect folderSource = new Rect(); // the folder icon's screen bounds
-    private View popupAnchor;
-    private float lastTouchX, lastTouchY;       // screen coordinates of the latest press
-
-    /** What's being dragged around the home screen. */
+    /** What's being dragged: a home/dock item, or an app picked up in the drawer. */
     private static final class DragState {
-        final HomeLayout.Item item;
+        final HomeLayout.Item item; // null when it comes from the drawer
+        final String key;
+        final AppEntry app;         // null for folders and shortcuts
         final View view;
-        boolean droppedInPlace;
-        DragState(HomeLayout.Item item, View view) { this.item = item; this.view = view; }
+        final boolean fromDrawer;
+        float startX, startY;       // screen coordinates where the drag began
+        boolean movedFar, droppedInPlace;
+        DragState(HomeLayout.Item item, String key, AppEntry app, View view, boolean fromDrawer) {
+            this.item = item; this.key = key; this.app = app; this.view = view; this.fromDrawer = fromDrawer;
+        }
     }
 
     @Override
@@ -112,6 +132,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_home);
         prefs = new Prefs(this);
+        wallpaper = WallpaperManager.getInstance(this);
 
         homeContent = findViewById(R.id.home_content);
         clock = findViewById(R.id.clock);
@@ -120,19 +141,21 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         grid = findViewById(R.id.grid);
         pageDots = findViewById(R.id.page_dots);
         dock = findViewById(R.id.dock);
+        dockDots = findViewById(R.id.dock_dots);
         handle = findViewById(R.id.drawer_handle);
         emptyHint = findViewById(R.id.empty_hint);
-        removeZone = findViewById(R.id.remove_zone);
+        dropBar = findViewById(R.id.drop_bar);
+        dropRemove = findViewById(R.id.drop_remove);
+        dropInfo = findViewById(R.id.drop_info);
+        dropUninstall = findViewById(R.id.drop_uninstall);
         drawer = findViewById(R.id.drawer);
         search = findViewById(R.id.search);
         drawerList = findViewById(R.id.drawer_list);
-        folderOverlay = findViewById(R.id.folder_overlay);
+        alpha = findViewById(R.id.alpha);
         popupAnchor = findViewById(R.id.popup_anchor);
-        folderCard = findViewById(R.id.folder_card);
-        folderTitle = findViewById(R.id.folder_title);
-        folderGrid = findViewById(R.id.folder_grid);
-        folderOverlay.setOnClickListener(v -> closeFolder());
-        folderTitle.setOnClickListener(v -> { if (openFolder != null) renameFolder(openFolder); });
+
+        folders = new FolderPanel(this, this, findViewById(R.id.folder_overlay), findViewById(R.id.folder_card),
+                findViewById(R.id.folder_title), findViewById(R.id.folder_grid));
 
         // Edge to edge over the wallpaper: keep content clear of the system bars,
         // and the drawer clear of the keyboard too.
@@ -146,10 +169,20 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
 
         repo = new AppRepository(this, this);
         adapter = new DrawerAdapter(repo, prefs, this);
+        adapter.setTitles(getString(R.string.most_used), getString(R.string.all_apps));
         repo.setLabeler(adapter::labelOf); // letter icons use custom names
         drawerGrid = new GridLayoutManager(this, prefs.drawerColumns());
+        drawerGrid.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
+            @Override public int getSpanSize(int position) {
+                return adapter.isHeader(position) ? drawerGrid.getSpanCount() : 1;
+            }
+        });
         drawerList.setLayoutManager(drawerGrid);
         drawerList.setAdapter(adapter);
+        alpha.setOnLetter(l -> {
+            int pos = adapter.positionFor(l);
+            if (pos >= 0) drawerGrid.scrollToPositionWithOffset(pos, 0);
+        });
 
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
@@ -157,6 +190,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
             @Override public void afterTextChanged(Editable s) {
                 adapter.setQuery(s.toString());
                 drawerList.scrollToPosition(0);
+                refreshAlpha();
             }
         });
         search.setOnEditorActionListener((v, actionId, event) -> {
@@ -166,8 +200,6 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
             return true;
         });
 
-        // Home: swipe up for the drawer, sideways for pages. Drawer: swipe down at
-        // the top of the list to close it.
         gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
@@ -176,7 +208,13 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
                 float dy = e2.getY() - e1.getY();
                 if (Math.abs(vx) > Math.abs(vy)) {
                     if (drawerOpen || Math.abs(vx) < 600 || Math.abs(dx) < dp(60)) return false;
-                    return flipPage(dx < 0 ? 1 : -1);
+                    int dir = dx < 0 ? 1 : -1;
+                    if (layout.dockPages() > 1 && dock.getVisibility() == View.VISIBLE
+                            && dock.getGlobalVisibleRect(scratch)
+                            && scratch.contains((int) e1.getRawX(), (int) e1.getRawY())) {
+                        return flipDockPage(dir);
+                    }
+                    return flipPage(dir);
                 }
                 if (Math.abs(vy) < 800) return false;
                 if (!drawerOpen && dy < -dp(60)) {
@@ -193,11 +231,16 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         handle.setOnClickListener(v -> openDrawer());
         clock.setOnClickListener(v -> openClockApp());
 
-        grid.setOnLongClickListener(v -> { showHomeMenu(v); return true; });
+        grid.setOnLongClickListener(v -> { showHomeMenu(); return true; });
         grid.setOnDragListener((v, e) -> onCellDrag(grid, HomeLayout.HOME, e));
         dock.setOnDragListener((v, e) -> onCellDrag(dock, HomeLayout.DOCK, e));
-        removeZone.setOnDragListener(this::onRemoveDrag);
+        dropRemove.setOnDragListener((v, e) -> onTargetDrag(dropRemove, e));
+        dropInfo.setOnDragListener((v, e) -> onTargetDrag(dropInfo, e));
+        dropUninstall.setOnDragListener((v, e) -> onTargetDrag(dropUninstall, e));
+        drawer.setOnDragListener(this::onDrawerDrag);
+        findViewById(R.id.root).setOnDragListener(this::onRootDrag);
 
+        currentPage = prefs.defaultPage();
         reloadConfig();
         repo.reload();
     }
@@ -205,7 +248,15 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
     @Override
     protected void onResume() {
         super.onResume();
-        reloadConfig(); // settings or a restored backup may have changed things
+        setRequestedOrientation(prefs.allowRotation()
+                ? ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        reloadConfig(); // settings, a restored backup or a newly pinned shortcut may have changed things
+        for (String k : layout.allKeys()) {
+            if (Shortcuts.isShortcutKey(k) && repo.findShortcut(k) == null && repo.isLoaded()) {
+                repo.reload(); // a shortcut was pinned while we were away
+                break;
+            }
+        }
         maybePromptForHome();
     }
 
@@ -216,17 +267,23 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         super.onDestroy();
     }
 
-    // Pressing Home while already home closes the drawer, then returns to page one.
+    @Override
+    public void onConfigurationChanged(Configuration c) {
+        super.onConfigurationChanged(c);
+        applyAppearance();
+        afterLayout(grid, this::refreshHome); // cells changed size
+    }
+
+    // Home while already home: close what's open, then return to the default page.
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (openFolder != null) {
-            closeFolder();
+        if (folders.isOpen()) {
+            folders.close();
         } else if (drawerOpen) {
             closeDrawer();
-        } else if (currentPage != 0) {
-            currentPage = 0;
-            refreshHome();
+        } else if (currentPage != prefs.defaultPage()) {
+            animateToPage(prefs.defaultPage());
         }
     }
 
@@ -236,34 +293,115 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
             lastTouchX = ev.getRawX();
             lastTouchY = ev.getRawY();
         }
-        if (openFolder == null) gestures.onTouchEvent(ev); // no page/drawer swipes over an open folder
+        if (!folders.isOpen()) gestures.onTouchEvent(ev); // no page/drawer swipes over an open folder
         return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) updateWallpaper(currentPage);
     }
 
     @Override
     public void onAppsChanged() {
         adapter.setApps(repo.apps());
+        refreshAlpha();
         refreshHome();
+        folders.refresh();
+    }
+
+    /* ---------- FolderPanel.Host ---------- */
+
+    @Override public HomeLayout layout() { return layout; }
+    @Override public AppRepository repo() { return repo; }
+    @Override public Prefs prefs() { return prefs; }
+    @Override public int homeIconPx() { return homeIconPx; }
+    @Override public void syncPins() { repo.syncPins(layout.allKeys()); }
+
+    /** An icon view for an app or shortcut key, or null if it can't be shown right now. */
+    @Override
+    public View makeTile(String key, ViewGroup parent, boolean showLabel, int iconPx) {
+        String name;
+        View v = LayoutInflater.from(this).inflate(R.layout.item_icon, parent, false);
+        ImageView icon = v.findViewById(R.id.icon);
+        if (Shortcuts.isShortcutKey(key)) {
+            ShortcutInfo si = repo.findShortcut(key);
+            if (si == null) return null;
+            name = repo.shortcutLabel(si);
+            repo.loadShortcutIcon(key, si, icon::setImageDrawable);
+        } else {
+            AppEntry app = repo.find(key);
+            if (app == null) return null; // still loading, or on a paused profile
+            name = adapter.labelOf(app);
+            repo.loadIcon(app, icon::setImageDrawable);
+        }
+        ViewGroup.LayoutParams lp = icon.getLayoutParams();
+        lp.width = iconPx;
+        lp.height = iconPx;
+        icon.setLayoutParams(lp);
+        TextView label = v.findViewById(R.id.label);
+        label.setText(name);
+        prefs.styleLabel(label);
+        label.setVisibility(showLabel ? View.VISIBLE : View.GONE);
+        v.setContentDescription(name);
+        return v;
+    }
+
+    @Override
+    public void launchKey(String key, View from) {
+        if (Shortcuts.isShortcutKey(key)) {
+            ShortcutInfo si = repo.findShortcut(key);
+            if (si != null) repo.launchShortcut(si, from);
+            return;
+        }
+        AppEntry app = repo.find(key);
+        if (app == null) return;
+        prefs.recordLaunch(key);
+        repo.launch(app, from);
+    }
+
+    /** Runs once, right after the view's next layout pass. */
+    @Override
+    public void afterLayout(View v, Runnable r) {
+        v.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                v.getViewTreeObserver().removeOnPreDrawListener(this);
+                r.run();
+                return true;
+            }
+        });
+        v.requestLayout();
     }
 
     /* ---------- configuration ---------- */
 
     private void reloadConfig() {
-        layout = HomeLayout.load(getFilesDir(), prefs.columns(), prefs.rows(), prefs.pages(), prefs.dockSlots());
+        layout = HomeLayout.load(getFilesDir(), prefs);
         if (currentPage >= layout.pages()) currentPage = layout.pages() - 1;
+        if (currentDockPage >= layout.dockPages()) currentDockPage = 0;
         grid.setGrid(layout.columns(), layout.rows());
         dock.setGrid(layout.dockSlots(), 1);
-        iconPx = Math.round(getResources().getDimension(R.dimen.icon_size) * prefs.iconScale());
+        float base = getResources().getDimension(R.dimen.icon_size);
+        homeIconPx = Math.round(base * Prefs.ICON_SCALES[prefs.iconSize()]);
+        dockIconPx = Math.round(base * Prefs.ICON_SCALES[prefs.dockIconSize()]);
+        drawerIconPx = Math.round(base * Prefs.ICON_SCALES[prefs.drawerIconSize()]);
         repo.setTheme(IconTheme.from(prefs)); // re-renders icons only if the theme changed
         drawerGrid.setSpanCount(prefs.drawerColumns());
-        adapter.applyPrefs(iconPx);
+        adapter.applyPrefs(drawerIconPx, prefs.drawerColumns());
         applyAppearance();
+        refreshAlpha();
         refreshHome();
+        folders.refresh();
+        updateWallpaper(currentPage);
     }
 
     private void applyAppearance() {
         int accent = prefs.accent();
         drawer.setBackgroundColor(Prefs.background(prefs.drawerOpacity()));
+        grid.setAccent(accent);
+        dock.setAccent(accent);
+        alpha.setAccent(accent);
 
         GradientDrawable dockBg = new GradientDrawable();
         dockBg.setColor(Prefs.background(prefs.dockOpacity()));
@@ -275,7 +413,8 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         handle.setVisibility(showDock ? View.GONE : View.VISIBLE);
         handle.setImageTintList(ColorStateList.valueOf(accent));
 
-        clock.setVisibility(prefs.showClock() ? View.VISIBLE : View.GONE);
+        boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+        clock.setVisibility(prefs.showClock() && !landscape ? View.VISIBLE : View.GONE); // no room sideways
         clockDate.setVisibility(prefs.showDate() ? View.VISIBLE : View.GONE);
         clockTime.setTextColor(accent);
         clockDate.setTextColor(accent);
@@ -307,6 +446,12 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         return d;
     }
 
+    private void refreshAlpha() {
+        boolean show = prefs.azScroller() && !adapter.isSearching();
+        alpha.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show) alpha.setLetters(adapter.letters());
+    }
+
     private void openClockApp() {
         try {
             startActivity(new Intent(AlarmClock.ACTION_SHOW_ALARMS));
@@ -315,10 +460,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         }
     }
 
-    /* ---------- default home prompt ---------- */
-
-    // Once, when Hearth is opened but isn't the default home app yet. Settings has
-    // the same button for later.
+    // Once, when Hearth is opened but isn't the default home app yet.
     private void maybePromptForHome() {
         if (prefs.homePromptShown() || DefaultHome.isDefault(this)) return;
         prefs.setHomePromptShown();
@@ -332,51 +474,62 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
 
     /* ---------- home screen, pages and dock ---------- */
 
-    private void refreshHome() {
+    @Override
+    public void refreshHome() {
         grid.removeAllViews();
         dock.removeAllViews();
         boolean homeLabels = prefs.homeLabels();
+        // In landscape (or with many rows) cells get small: shrink icons to fit.
+        int gridIcon = fitIcon(grid, homeIconPx, homeLabels);
+        int dockIcon = fitIcon(dock, dockIconPx, false);
         for (HomeLayout.Item item : layout.items()) {
             if (!layout.fits(item.container, item.page, item.x, item.y)) continue; // waiting for room
             boolean inDock = HomeLayout.DOCK.equals(item.container);
-            if (!inDock && item.page != currentPage) continue;
+            if (item.page != (inDock ? currentDockPage : currentPage)) continue;
+            CellLayout parent = inDock ? dock : grid;
+            boolean label = !inDock && homeLabels;
+            View v;
             HomeLayout.Folder folder = layout.folder(item);
             if (folder != null) {
-                View fv = makeFolderIcon(folder, inDock ? dock : grid, !inDock && homeLabels);
-                fv.setOnClickListener(view -> showFolder(folder, view));
-                fv.setOnLongClickListener(view -> { startDrag(item, view); return true; });
-                (inDock ? dock : grid).addView(fv, new CellLayout.LayoutParams(item.x, item.y));
-                continue;
+                v = makeFolderIcon(folder, parent, label, inDock ? dockIcon : gridIcon);
+                v.setOnClickListener(view -> folders.show(folder, view));
+            } else {
+                v = makeTile(item.key, parent, label, inDock ? dockIcon : gridIcon);
+                if (v == null) continue;
+                v.setOnClickListener(view -> launchKey(item.key, view));
             }
-            AppEntry app = repo.find(item.key);
-            // Not found: still loading, or on a paused work profile. Keep the cell, skip the icon.
-            if (app == null) continue;
-            View v = makeIcon(app, inDock ? dock : grid, !inDock && homeLabels);
-            v.setOnClickListener(view -> repo.launch(app, view));
-            v.setOnLongClickListener(view -> { startDrag(item, view); return true; });
-            (inDock ? dock : grid).addView(v, new CellLayout.LayoutParams(item.x, item.y));
+            v.setOnLongClickListener(view -> { onItemLongPress(item, view); return true; });
+            parent.addView(v, new CellLayout.LayoutParams(item.x, item.y));
         }
         emptyHint.setVisibility(layout.isEmpty() ? View.VISIBLE : View.GONE);
-        refreshDots();
+        dots(pageDots, layout.pages(), currentPage, 7);
+        dots(dockDots, layout.dockPages(), currentDockPage, 5);
+        if (dock.getVisibility() != View.VISIBLE) dockDots.setVisibility(View.GONE);
     }
 
-    private void refreshDots() {
-        pageDots.removeAllViews();
-        int pages = layout.pages();
-        pageDots.setVisibility(pages > 1 ? View.VISIBLE : View.GONE);
-        if (pages <= 1) return;
-        int size = Math.round(dp(7));
-        int gap = Math.round(dp(5));
-        for (int i = 0; i < pages; i++) {
+    private int fitIcon(CellLayout cl, int wanted, boolean label) {
+        if (cl.cellHeight() <= 0 || cl.cellWidth() <= 0) return wanted;
+        int labelH = label ? Math.round(dp(prefs.labelTwoLines() ? 36 : 20)) : 0;
+        int room = Math.min(cl.cellWidth() - Math.round(dp(10)), cl.cellHeight() - labelH - Math.round(dp(14)));
+        return Math.max(Math.round(dp(24)), Math.min(wanted, room));
+    }
+
+    private void dots(LinearLayout strip, int count, int current, int sizeDp) {
+        strip.removeAllViews();
+        strip.setVisibility(count > 1 ? View.VISIBLE : View.GONE);
+        if (count <= 1) return;
+        int size = Math.round(dp(sizeDp));
+        int gap = Math.round(dp(sizeDp * 0.7f));
+        for (int i = 0; i < count; i++) {
             View dot = new View(this);
             GradientDrawable d = new GradientDrawable();
             d.setShape(GradientDrawable.OVAL);
-            d.setColor(i == currentPage ? prefs.accent() : 0x80E6F0FF);
+            d.setColor(i == current ? prefs.accent() : 0x80E6F0FF);
             dot.setBackground(d);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
             lp.setMarginStart(gap);
             lp.setMarginEnd(gap);
-            pageDots.addView(dot, lp);
+            strip.addView(dot, lp);
         }
     }
 
@@ -384,37 +537,67 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
     private boolean flipPage(int direction) {
         int target = currentPage + direction;
         if (target < 0 || target >= layout.pages()) return false;
-        float w = grid.getWidth();
-        grid.animate().cancel();
-        grid.animate().translationX(-direction * w * 0.3f).alpha(0f).setDuration(110)
-                .withEndAction(() -> {
-                    currentPage = target;
-                    refreshHome();
-                    grid.setTranslationX(direction * w * 0.3f);
-                    grid.animate().translationX(0).alpha(1f).setDuration(140).withEndAction(null).start();
-                })
-                .start();
+        slide(grid, direction, () -> currentPage = target);
+        animateWallpaper(target);
         return true;
     }
 
-    private View makeIcon(AppEntry app, CellLayout parent, boolean showLabel) {
-        View v = LayoutInflater.from(this).inflate(R.layout.item_icon, parent, false);
-        ImageView icon = v.findViewById(R.id.icon);
-        ViewGroup.LayoutParams lp = icon.getLayoutParams();
-        lp.width = iconPx;
-        lp.height = iconPx;
-        icon.setLayoutParams(lp);
-        TextView label = v.findViewById(R.id.label);
-        String name = adapter.labelOf(app);
-        label.setText(name);
-        label.setVisibility(showLabel ? View.VISIBLE : View.GONE);
-        v.setContentDescription(name);
-        repo.loadIcon(app, icon::setImageDrawable);
-        return v;
+    private void animateToPage(int target) {
+        if (target == currentPage || target < 0 || target >= layout.pages()) return;
+        int direction = target > currentPage ? 1 : -1;
+        slide(grid, direction, () -> currentPage = target);
+        animateWallpaper(target);
     }
 
+    private boolean flipDockPage(int direction) {
+        int target = currentDockPage + direction;
+        if (target < 0 || target >= layout.dockPages()) return false;
+        slide(dock, direction, () -> currentDockPage = target);
+        return true;
+    }
+
+    private void slide(View v, int direction, Runnable switchPage) {
+        float w = v.getWidth();
+        v.animate().cancel();
+        v.animate().translationX(-direction * w * 0.3f).alpha(0f).setDuration(110)
+                .withEndAction(() -> {
+                    switchPage.run();
+                    refreshHome();
+                    v.setTranslationX(direction * w * 0.3f);
+                    v.animate().translationX(0).alpha(1f).setDuration(140).withEndAction(null).start();
+                })
+                .start();
+    }
+
+    /* ---------- wallpaper scrolling ---------- */
+
+    private void animateWallpaper(int target) {
+        ValueAnimator a = ValueAnimator.ofFloat(wallpaperPage, target);
+        a.setDuration(260);
+        a.addUpdateListener(an -> updateWallpaper((float) an.getAnimatedValue()));
+        a.start();
+    }
+
+    // Pans a wide wallpaper across pages, like other launchers. Off, or with one
+    // page, it stays centred.
+    private void updateWallpaper(float page) {
+        wallpaperPage = page;
+        IBinder token = grid.getWindowToken();
+        if (token == null) return;
+        int pages = layout == null ? 1 : layout.pages();
+        boolean scroll = prefs.scrollWallpaper() && pages > 1;
+        try {
+            wallpaper.setWallpaperOffsetSteps(scroll ? 1f / (pages - 1) : 0f, 0f);
+            wallpaper.setWallpaperOffsets(token, scroll ? page / (pages - 1) : 0.5f, 0.5f);
+        } catch (IllegalArgumentException ignored) {
+            // window not attached yet
+        }
+    }
+
+    /* ---------- tiles ---------- */
+
     /** Same layout as an app icon, with the folder's mini-icon plate in place of the icon. */
-    private View makeFolderIcon(HomeLayout.Folder folder, CellLayout parent, boolean showLabel) {
+    private View makeFolderIcon(HomeLayout.Folder folder, ViewGroup parent, boolean showLabel, int iconPx) {
         View v = LayoutInflater.from(this).inflate(R.layout.item_icon, parent, false);
         ViewGroup box = (ViewGroup) v;
         View img = v.findViewById(R.id.icon);
@@ -426,82 +609,163 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         int shown = 0;
         for (String key : folder.apps) {
             if (shown >= 4) break;
-            AppEntry app = repo.find(key);
-            if (app == null) continue;
-            int slot = shown++;
-            repo.loadIcon(app, d -> fi.setMini(slot, d));
+            int slot = shown;
+            if (Shortcuts.isShortcutKey(key)) {
+                ShortcutInfo si = repo.findShortcut(key);
+                if (si == null) continue;
+                repo.loadShortcutIcon(key, si, d -> fi.setMini(slot, d));
+            } else {
+                AppEntry app = repo.find(key);
+                if (app == null) continue;
+                repo.loadIcon(app, d -> fi.setMini(slot, d));
+            }
+            shown++;
         }
         TextView label = v.findViewById(R.id.label);
-        String name = folderName(folder);
+        String name = folders.nameOf(folder);
         label.setText(name);
+        prefs.styleLabel(label);
         label.setVisibility(showLabel ? View.VISIBLE : View.GONE);
         v.setContentDescription(getString(R.string.folder_description, name, folder.apps.size()));
         return v;
     }
 
-    private String folderName(HomeLayout.Folder f) {
-        return f.name == null || f.name.isEmpty() ? getString(R.string.folder_default_name) : f.name;
-    }
+    /* ---------- drag and drop ---------- */
 
-    private void startDrag(HomeLayout.Item item, View view) {
-        DragState state = new DragState(item, view);
-        ClipData data = ClipData.newPlainText("hearth", item.key);
-        if (view.startDragAndDrop(data, new View.DragShadowBuilder(view), state, 0)) {
-            view.setVisibility(View.INVISIBLE);
-            removeZone.setVisibility(View.VISIBLE);
+    private void onItemLongPress(HomeLayout.Item item, View view) {
+        if (prefs.lockLayout()) {
             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            showItemMenu(item, view); // locked: menu only, nothing moves
+            return;
         }
+        startDrag(new DragState(item, item.key, repo.find(item.key), view, false));
     }
 
-    // Shared by the grid and the dock. Only the grid's listener tidies up when a
-    // drag ends, so the end-of-drag work happens once.
+    private void startDrag(DragState st) {
+        st.startX = lastTouchX;
+        st.startY = lastTouchY;
+        ClipData data = ClipData.newPlainText("hearth", st.key);
+        if (!st.view.startDragAndDrop(data, new View.DragShadowBuilder(st.view), st, 0)) return;
+        st.view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        if (!st.fromDrawer) st.view.setVisibility(View.INVISIBLE);
+        dropRemove.setVisibility(st.item != null ? View.VISIBLE : View.GONE);
+        dropInfo.setVisibility(st.app != null ? View.VISIBLE : View.GONE);
+        dropUninstall.setVisibility(st.app != null && repo.canUninstall(st.app) ? View.VISIBLE : View.GONE);
+        dropBar.setVisibility(View.VISIBLE);
+    }
+
+    /** What a drop at (x, y) would do: {mode, cellX, cellY, page}. */
+    private int[] dropPlan(CellLayout target, String container, DragState st, float x, float y) {
+        int page = HomeLayout.HOME.equals(container) ? currentPage : currentDockPage;
+        int[] cell = target.cellAt(x, y);
+        HomeLayout.Item other = layout.at(container, page, cell[0], cell[1]);
+        int mode;
+        if (other == null || other == st.item) mode = CellLayout.HL_MOVE;
+        else if (HomeLayout.isFolderKey(st.key)) mode = CellLayout.HL_INSERT; // folders don't nest
+        else if (target.nearCellCentre(x, y)) mode = CellLayout.HL_FOLDER;
+        else mode = CellLayout.HL_INSERT;
+        return new int[] {mode, cell[0], cell[1], page};
+    }
+
+    // The grid and the dock. Tidy-up when a drag ends happens once, in onRootDrag.
     private boolean onCellDrag(CellLayout target, String container, DragEvent e) {
         if (!(e.getLocalState() instanceof DragState)) return false;
-        DragState state = (DragState) e.getLocalState();
+        DragState st = (DragState) e.getLocalState();
         switch (e.getAction()) {
             case DragEvent.ACTION_DRAG_STARTED:
                 return true;
-            case DragEvent.ACTION_DRAG_LOCATION:
+            case DragEvent.ACTION_DRAG_LOCATION: {
                 if (target == grid) checkEdge(e.getX());
+                int[] plan = dropPlan(target, container, st, e.getX(), e.getY());
+                target.setHighlight(plan[1], plan[2], plan[0]);
                 return true;
+            }
             case DragEvent.ACTION_DRAG_EXITED:
+                target.clearHighlight();
                 if (target == grid) cancelEdgeFlip();
                 return true;
             case DragEvent.ACTION_DROP: {
                 cancelEdgeFlip();
-                int[] cell = target.cellAt(e.getX(), e.getY());
-                int page = HomeLayout.HOME.equals(container) ? currentPage : 0;
-                boolean samePlace = container.equals(state.item.container)
-                        && cell[0] == state.item.x && cell[1] == state.item.y
-                        && (HomeLayout.DOCK.equals(container) || state.item.page == page);
-                HomeLayout.Item other = layout.at(container, page, cell[0], cell[1]);
-                boolean draggingFolder = HomeLayout.isFolderKey(state.item.key);
-                if (samePlace) {
-                    state.droppedInPlace = true; // a long-press that didn't move: show the menu
-                } else if (other == null || draggingFolder) {
-                    layout.move(state.item, container, page, cell[0], cell[1]); // empty cell, or swap
-                } else if (layout.folder(other) != null) {
-                    layout.addToFolder(layout.folder(other), state.item); // onto a folder: join it
-                } else {
-                    layout.createFolder(other, state.item, ""); // app onto app: new folder
+                target.clearHighlight();
+                int[] plan = dropPlan(target, container, st, e.getX(), e.getY());
+                int x = plan[1], y = plan[2], page = plan[3];
+                HomeLayout.Item other = layout.at(container, page, x, y);
+                if (st.item != null && other == st.item) {
+                    st.droppedInPlace = true; // a long-press that didn't move: show the menu
+                } else if (plan[0] == CellLayout.HL_MOVE) {
+                    if (st.item != null) layout.move(st.item, container, page, x, y);
+                    else layout.addAt(st.key, container, page, x, y);
+                } else if (plan[0] == CellLayout.HL_FOLDER) {
+                    HomeLayout.Folder f = layout.folder(other);
+                    if (f != null) layout.addToFolder(f, st.key, st.item);
+                    else layout.createFolder(other, st.key, st.item, "");
+                } else if (!layout.insertAt(st.item, st.key, container, page, x, y)) {
+                    Toast.makeText(this, HomeLayout.DOCK.equals(container) ? R.string.dock_full : R.string.home_full,
+                            Toast.LENGTH_SHORT).show();
                 }
                 return true;
             }
-            case DragEvent.ACTION_DRAG_ENDED:
-                if (target == grid) {
-                    cancelEdgeFlip();
-                    state.view.setVisibility(View.VISIBLE);
-                    removeZone.setVisibility(View.GONE);
-                    removeZone.setActivated(false);
-                    refreshHome();
-                    // The icons were just rebuilt; wait until they're laid out, or the
-                    // menu anchors to a view still at (0,0) and opens at the top.
-                    if (state.droppedInPlace) afterLayout(grid, () -> showIconMenu(state.item));
-                }
+            default:
+                return true;
+        }
+    }
+
+    private boolean onTargetDrag(TextView target, DragEvent e) {
+        if (!(e.getLocalState() instanceof DragState)) return false;
+        DragState st = (DragState) e.getLocalState();
+        switch (e.getAction()) {
+            case DragEvent.ACTION_DRAG_ENTERED: target.setActivated(true); return true;
+            case DragEvent.ACTION_DRAG_EXITED: target.setActivated(false); return true;
+            case DragEvent.ACTION_DROP:
+                if (target == dropRemove && st.item != null) layout.remove(st.item);
+                else if (target == dropInfo && st.app != null) repo.openAppInfo(st.app, st.view);
+                else if (target == dropUninstall && st.app != null) repo.uninstall(this, st.app);
                 return true;
             default:
                 return true;
         }
+    }
+
+    // A drag that starts in the drawer: once the finger has moved a little, the
+    // drawer gets out of the way so the icon can be dropped on the home screen.
+    private boolean onDrawerDrag(View v, DragEvent e) {
+        if (!(e.getLocalState() instanceof DragState)) return false;
+        DragState st = (DragState) e.getLocalState();
+        if (!st.fromDrawer) return false;
+        if (e.getAction() == DragEvent.ACTION_DRAG_LOCATION && !st.movedFar) {
+            int[] loc = new int[2];
+            drawer.getLocationOnScreen(loc);
+            float dx = loc[0] + e.getX() - st.startX, dy = loc[1] + e.getY() - st.startY;
+            if (Math.hypot(dx, dy) > dp(28)) {
+                st.movedFar = true;
+                hideDrawerForDrag();
+            }
+        }
+        return e.getAction() != DragEvent.ACTION_DROP; // a drop on the drawer itself does nothing
+    }
+
+    // Sees every drag start and end, so the end-of-drag tidy-up happens exactly once.
+    private boolean onRootDrag(View v, DragEvent e) {
+        if (!(e.getLocalState() instanceof DragState)) return false;
+        DragState st = (DragState) e.getLocalState();
+        if (e.getAction() == DragEvent.ACTION_DROP) return false;
+        if (e.getAction() != DragEvent.ACTION_DRAG_ENDED) return true;
+        cancelEdgeFlip();
+        grid.clearHighlight();
+        dock.clearHighlight();
+        if (!st.fromDrawer) st.view.setVisibility(View.VISIBLE);
+        dropBar.setVisibility(View.GONE);
+        for (TextView t : new TextView[] {dropRemove, dropInfo, dropUninstall}) t.setActivated(false);
+        refreshHome();
+        syncPins();
+        if (st.droppedInPlace && st.item != null) {
+            // The icons were just rebuilt; wait until they're laid out, or the menu
+            // anchors to a view still at (0,0) and opens at the top of the screen.
+            afterLayout(grid, () -> showItemMenu(st.item, findItemView(st.item)));
+        } else if (st.fromDrawer && !st.movedFar && st.app != null) {
+            showAppMenu(st.app, st.view, null); // long-press in the drawer without dragging
+        }
+        return true;
     }
 
     // Holding a dragged icon at the left or right edge flips to that page.
@@ -528,45 +792,100 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         pendingEdgeDirection = 0;
     }
 
-    private boolean onRemoveDrag(View v, DragEvent e) {
-        if (!(e.getLocalState() instanceof DragState)) return false;
-        DragState state = (DragState) e.getLocalState();
-        switch (e.getAction()) {
-            case DragEvent.ACTION_DRAG_ENTERED: removeZone.setActivated(true); return true;
-            case DragEvent.ACTION_DRAG_EXITED: removeZone.setActivated(false); return true;
-            case DragEvent.ACTION_DROP: layout.remove(state.item); return true;
-            default: return true;
+    private View findItemView(HomeLayout.Item item) {
+        CellLayout parent = HomeLayout.DOCK.equals(item.container) ? dock : grid;
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            CellLayout.LayoutParams lp = (CellLayout.LayoutParams) parent.getChildAt(i).getLayoutParams();
+            if (lp.cellX == item.x && lp.cellY == item.y) return parent.getChildAt(i);
         }
+        return null;
     }
 
-    /** Menu for a home or dock icon. The views were rebuilt, so find the icon again. */
-    private void showIconMenu(HomeLayout.Item item) {
-        if (layout.folder(item) != null) {
-            showFolderMenu(item);
+    /* ---------- menus ---------- */
+
+    /** Menu for something on the home screen or dock. */
+    private void showItemMenu(HomeLayout.Item item, View anchor) {
+        if (anchor == null) return;
+        HomeLayout.Folder folder = layout.folder(item);
+        if (folder != null) {
+            showFolderMenu(item, folder, anchor);
             return;
         }
         AppEntry app = repo.find(item.key);
-        CellLayout parent = HomeLayout.DOCK.equals(item.container) ? dock : grid;
-        View anchor = null;
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            CellLayout.LayoutParams lp = (CellLayout.LayoutParams) parent.getChildAt(i).getLayoutParams();
-            if (lp.cellX == item.x && lp.cellY == item.y) anchor = parent.getChildAt(i);
+        if (app != null) {
+            showAppMenu(app, anchor, item);
+            return;
         }
-        if (app == null || anchor == null) return;
-        PopupMenu menu = new PopupMenu(this, anchor);
-        menu.getMenu().add(0, 5, 0, R.string.rename);
-        menu.getMenu().add(0, 7, 0, R.string.change_icon);
-        menu.getMenu().add(0, 1, 1, HomeLayout.DOCK.equals(item.container)
-                ? R.string.remove_from_dock : R.string.remove_from_home);
-        menu.getMenu().add(0, 2, 2, R.string.app_info);
-        if (repo.canUninstall(app)) menu.getMenu().add(0, 3, 3, R.string.uninstall);
-        View finalAnchor = anchor;
+        if (prefs.lockLayout()) return;
+        PopupMenu menu = new PopupMenu(this, anchor); // a pinned shortcut
+        menu.getMenu().add(0, 1, 0, HomeLayout.DOCK.equals(item.container) ? R.string.remove_from_dock : R.string.remove_from_home);
         menu.setOnMenuItemClickListener(mi -> {
-            switch (mi.getItemId()) {
+            layout.remove(item);
+            refreshHome();
+            syncPins();
+            return true;
+        });
+        menu.show();
+    }
+
+    /**
+     * An app's menu, wherever it is: its own shortcuts first (Nova-style), then
+     * actions. `item` is its home/dock cell, or null in the drawer.
+     */
+    private void showAppMenu(AppEntry app, View anchor, HomeLayout.Item item) {
+        boolean locked = prefs.lockLayout();
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.setForceShowIcon(true);
+        Menu m = menu.getMenu();
+        m.setGroupDividerEnabled(true);
+        List<ShortcutInfo> shortcuts = repo.appShortcuts(app);
+        LauncherApps la = getSystemService(LauncherApps.class);
+        int density = getResources().getDisplayMetrics().densityDpi;
+        for (int i = 0; i < shortcuts.size(); i++) {
+            ShortcutInfo si = shortcuts.get(i);
+            android.view.MenuItem mi = m.add(1, MENU_SHORTCUT_BASE + i, i, repo.shortcutLabel(si));
+            try {
+                Drawable d = la.getShortcutIconDrawable(si, density);
+                if (d != null) mi.setIcon(d);
+            } catch (SecurityException | IllegalStateException ignored) { }
+        }
+        if (item == null && !locked && !layout.contains(app.key)) {
+            m.add(2, 1, 10, R.string.add_to_home);
+            if (prefs.showDock()) m.add(2, 4, 11, R.string.add_to_dock);
+        }
+        m.add(2, 5, 12, R.string.rename);
+        m.add(2, 7, 13, R.string.change_icon);
+        if (item == null) {
+            boolean hidden = prefs.hidden().contains(app.key);
+            m.add(2, 6, 14, hidden ? R.string.unhide : R.string.hide);
+        } else if (!locked) {
+            m.add(2, 8, 14, HomeLayout.DOCK.equals(item.container) ? R.string.remove_from_dock : R.string.remove_from_home);
+        }
+        m.add(2, 2, 15, R.string.app_info);
+        if (repo.canUninstall(app)) m.add(2, 3, 16, R.string.uninstall);
+        menu.setOnMenuItemClickListener(mi -> {
+            int id = mi.getItemId();
+            if (id >= MENU_SHORTCUT_BASE) {
+                repo.launchShortcut(shortcuts.get(id - MENU_SHORTCUT_BASE), anchor);
+                if (drawerOpen) drawer.postDelayed(this::closeDrawer, 300);
+                return true;
+            }
+            switch (id) {
+                case 1: pin(app, HomeLayout.HOME, R.string.added_to_home, R.string.home_full); return true;
+                case 4: pin(app, HomeLayout.DOCK, R.string.added_to_dock, R.string.dock_full); return true;
                 case 5: rename(app); return true;
                 case 7: changeIcon(app); return true;
-                case 1: layout.remove(item); refreshHome(); return true;
-                case 2: repo.openAppInfo(app, finalAnchor); return true;
+                case 6: {
+                    boolean hidden = prefs.hidden().contains(app.key);
+                    prefs.setHidden(app.key, !hidden);
+                    adapter.applyPrefs(drawerIconPx, prefs.drawerColumns());
+                    refreshAlpha();
+                    Toast.makeText(this, getString(hidden ? R.string.unhidden : R.string.hidden_toast,
+                            adapter.labelOf(app)), Toast.LENGTH_SHORT).show();
+                    return true;
+                }
+                case 8: layout.remove(item); refreshHome(); return true;
+                case 2: repo.openAppInfo(app, anchor); return true;
                 case 3: repo.uninstall(this, app); return true;
                 default: return false;
             }
@@ -574,16 +893,32 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         menu.show();
     }
 
-    /** Runs once, right after the view's next layout pass. */
-    private static void afterLayout(View v, Runnable r) {
-        v.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
-            @Override public boolean onPreDraw() {
-                v.getViewTreeObserver().removeOnPreDrawListener(this);
-                r.run();
-                return true;
+    private void showFolderMenu(HomeLayout.Item item, HomeLayout.Folder folder, View anchor) {
+        boolean locked = prefs.lockLayout();
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add(0, 1, 0, R.string.open_folder);
+        if (!locked) {
+            menu.getMenu().add(0, 2, 1, R.string.rename_folder);
+            menu.getMenu().add(0, 3, 2, R.string.ungroup);
+            menu.getMenu().add(0, 4, 3, HomeLayout.DOCK.equals(item.container)
+                    ? R.string.remove_from_dock : R.string.remove_from_home);
+        }
+        menu.setOnMenuItemClickListener(mi -> {
+            switch (mi.getItemId()) {
+                case 1: folders.show(folder, anchor); return true;
+                case 2: folders.rename(folder); return true;
+                case 3: {
+                    int lost = layout.ungroup(item);
+                    refreshHome();
+                    syncPins();
+                    if (lost > 0) Toast.makeText(this, getString(R.string.ungroup_no_room, lost), Toast.LENGTH_LONG).show();
+                    return true;
+                }
+                case 4: layout.remove(item); refreshHome(); syncPins(); return true;
+                default: return false;
             }
         });
-        v.requestLayout();
+        menu.show();
     }
 
     /** A popup menu that opens at the last press, for presses on empty space. */
@@ -596,16 +931,39 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
     }
 
     /** Long-press on empty home space: the menu opens where you pressed. */
-    private void showHomeMenu(View ignored) {
+    private void showHomeMenu() {
+        boolean locked = prefs.lockLayout();
         PopupMenu menu = menuAtTouch();
-        menu.getMenu().add(0, 1, 0, R.string.open_drawer);
-        menu.getMenu().add(0, 2, 1, R.string.wallpaper);
-        menu.getMenu().add(0, 3, 2, R.string.settings);
+        Menu m = menu.getMenu();
+        m.add(0, 1, 0, R.string.open_drawer);
+        m.add(0, 2, 1, R.string.wallpaper);
+        m.add(0, 3, 2, R.string.settings);
+        if (!locked) {
+            SubMenu pages = m.addSubMenu(0, 0, 3, R.string.pages);
+            pages.add(1, 10, 0, R.string.page_add);
+            if (layout.pages() > 1) pages.add(1, 11, 1, R.string.page_delete);
+            if (currentPage > 0) pages.add(1, 12, 2, R.string.page_move_left);
+            if (currentPage < layout.pages() - 1) pages.add(1, 13, 3, R.string.page_move_right);
+            if (currentPage != prefs.defaultPage()) pages.add(1, 14, 4, R.string.page_make_default);
+        }
+        m.add(0, 4, 4, locked ? R.string.unlock_layout : R.string.lock_layout);
         menu.setOnMenuItemClickListener(mi -> {
             switch (mi.getItemId()) {
                 case 1: openDrawer(); return true;
                 case 2: pickWallpaper(); return true;
                 case 3: startActivity(new Intent(this, SettingsActivity.class)); return true;
+                case 4:
+                    prefs.setLockLayout(!locked);
+                    Toast.makeText(this, locked ? R.string.layout_unlocked : R.string.layout_locked, Toast.LENGTH_SHORT).show();
+                    return true;
+                case 10: addPage(); return true;
+                case 11: deletePage(); return true;
+                case 12: movePage(-1); return true;
+                case 13: movePage(1); return true;
+                case 14:
+                    prefs.setDefaultPage(currentPage);
+                    Toast.makeText(this, R.string.page_is_default, Toast.LENGTH_SHORT).show();
+                    return true;
                 default: return false;
             }
         });
@@ -621,8 +979,60 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         }
     }
 
-    /** Rename an app everywhere it appears. Empty, or Reset, goes back to its own name. */
-    private void rename(AppEntry app) {
+    /* ---------- pages ---------- */
+
+    private void addPage() {
+        if (layout.pages() >= 7) {
+            Toast.makeText(this, R.string.page_limit, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int def = prefs.defaultPage();
+        layout.insertPage(currentPage + 1);
+        prefs.setPages(layout.pages());
+        if (def > currentPage) prefs.setDefaultPage(def + 1);
+        flipPage(1);
+        updateWallpaper(currentPage);
+    }
+
+    private void deletePage() {
+        Runnable delete = () -> {
+            int def = prefs.defaultPage();
+            int deleted = currentPage;
+            layout.deletePage(deleted);
+            prefs.setPages(layout.pages());
+            if (def > deleted) prefs.setDefaultPage(def - 1);
+            else if (def == deleted) prefs.setDefaultPage(0);
+            currentPage = Math.min(currentPage, layout.pages() - 1);
+            refreshHome();
+            updateWallpaper(currentPage);
+        };
+        if (layout.pageIsEmpty(currentPage)) {
+            delete.run();
+        } else {
+            new AlertDialog.Builder(this)
+                    .setMessage(R.string.page_delete_confirm)
+                    .setPositiveButton(R.string.page_delete, (d, w) -> delete.run())
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+        }
+    }
+
+    private void movePage(int direction) {
+        int target = currentPage + direction;
+        if (target < 0 || target >= layout.pages()) return;
+        int def = prefs.defaultPage();
+        layout.swapPages(currentPage, target);
+        if (def == currentPage) prefs.setDefaultPage(target);
+        else if (def == target) prefs.setDefaultPage(currentPage);
+        currentPage = target; // stay with the page you're moving
+        refreshHome();
+        updateWallpaper(currentPage);
+    }
+
+    /* ---------- rename / icon style ---------- */
+
+    @Override
+    public void rename(AppEntry app) {
         EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
         input.setSingleLine(true);
@@ -649,200 +1059,15 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
 
     private void applyRename(AppEntry app, String name) {
         prefs.setCustomLabel(app.key, name != null && name.trim().equals(app.label) ? null : name);
+        repo.setTheme(IconTheme.from(prefs));
         adapter.setApps(repo.apps());
+        refreshAlpha();
         refreshHome();
+        folders.refresh();
     }
 
-    /* ---------- folders ---------- */
-
-    private void showFolderMenu(HomeLayout.Item item) {
-        HomeLayout.Folder folder = layout.folder(item);
-        CellLayout parent = HomeLayout.DOCK.equals(item.container) ? dock : grid;
-        View anchor = null;
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            CellLayout.LayoutParams lp = (CellLayout.LayoutParams) parent.getChildAt(i).getLayoutParams();
-            if (lp.cellX == item.x && lp.cellY == item.y) anchor = parent.getChildAt(i);
-        }
-        if (folder == null || anchor == null) return;
-        View finalFolderAnchor = anchor;
-        PopupMenu menu = new PopupMenu(this, anchor);
-        menu.getMenu().add(0, 1, 0, R.string.open_folder);
-        menu.getMenu().add(0, 2, 1, R.string.rename_folder);
-        menu.getMenu().add(0, 3, 2, R.string.ungroup);
-        menu.getMenu().add(0, 4, 3, HomeLayout.DOCK.equals(item.container)
-                ? R.string.remove_from_dock : R.string.remove_from_home);
-        menu.setOnMenuItemClickListener(mi -> {
-            switch (mi.getItemId()) {
-                case 1: showFolder(folder, finalFolderAnchor); return true;
-                case 2: renameFolder(folder); return true;
-                case 3: {
-                    int lost = layout.ungroup(item);
-                    refreshHome();
-                    if (lost > 0) Toast.makeText(this, getString(R.string.ungroup_no_room, lost), Toast.LENGTH_LONG).show();
-                    return true;
-                }
-                case 4: layout.remove(item); refreshHome(); return true;
-                default: return false;
-            }
-        });
-        menu.show();
-    }
-
-    /** Opens a folder as a compact card right above its icon (below it if there's no room). */
-    private void showFolder(HomeLayout.Folder folder, View source) {
-        openFolder = folder;
-        source.getGlobalVisibleRect(folderSource);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Prefs.background(Math.max(prefs.drawerOpacity(), 85)));
-        bg.setCornerRadius(dp(20));
-        folderCard.setBackground(bg);
-        populateFolder();
-        boolean opening = folderOverlay.getVisibility() != View.VISIBLE;
-        folderOverlay.setVisibility(View.VISIBLE);
-        folderOverlay.setAlpha(1f);
-        if (opening) {
-            folderCard.setAlpha(0f); // hidden until it's measured and placed
-            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                    OnBackInvokedDispatcher.PRIORITY_OVERLAY, closeFolderOnBack);
-        }
-        afterLayout(folderCard, () -> placeFolderCard(opening));
-    }
-
-    private void placeFolderCard(boolean animate) {
-        int[] origin = new int[2];
-        folderOverlay.getLocationOnScreen(origin);
-        int w = folderCard.getWidth(), h = folderCard.getHeight();
-        int ow = folderOverlay.getWidth(), oh = folderOverlay.getHeight();
-        int margin = Math.round(dp(8));
-        Insets bars = folderOverlay.getRootWindowInsets() == null ? Insets.NONE
-                : folderOverlay.getRootWindowInsets().getInsets(WindowInsets.Type.systemBars());
-        float cx = folderSource.exactCenterX() - origin[0];
-        float x = Math.max(margin, Math.min(ow - w - margin, cx - w / 2f));
-        float y = folderSource.top - origin[1] - h - margin;           // above the icon
-        if (y < bars.top + margin) y = folderSource.bottom - origin[1] + margin; // else below
-        y = Math.max(bars.top + margin, Math.min(oh - bars.bottom - h - margin, y));
-        folderCard.setX(x);
-        folderCard.setY(y);
-        if (animate) {
-            folderCard.setPivotX(cx - x);
-            folderCard.setPivotY(y < folderSource.top - origin[1] ? h : 0);
-            folderCard.setScaleX(0.6f);
-            folderCard.setScaleY(0.6f);
-            folderCard.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160).start();
-        }
-    }
-
-    private void populateFolder() {
-        HomeLayout.Folder folder = openFolder;
-        if (folder == null) return;
-        folderTitle.setText(folderName(folder));
-        folderGrid.removeAllViews();
-        int count = 0;
-        for (String key : folder.apps) if (repo.find(key) != null) count++;
-        // As wide as it needs to be, up to four columns.
-        folderGrid.setColumnCount(Math.max(3, Math.min(4, count)));
-        int cellW = Math.round(dp(76));
-        boolean labels = prefs.homeLabels();
-        for (String key : folder.apps) {
-            AppEntry app = repo.find(key);
-            if (app == null) continue;
-            View v = makeIcon(app, grid, labels);
-            v.setOnClickListener(view -> {
-                repo.launch(app, view);
-                folderOverlay.postDelayed(this::closeFolder, 300);
-            });
-            v.setMinimumWidth(cellW);
-            v.setOnLongClickListener(view -> { showFolderAppMenu(folder, app, view); return true; });
-            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
-            lp.width = cellW;
-            lp.height = Math.round(dp(92));
-            folderGrid.addView(v, lp);
-        }
-    }
-
-    private void showFolderAppMenu(HomeLayout.Folder folder, AppEntry app, View anchor) {
-        anchor.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-        PopupMenu menu = new PopupMenu(this, anchor);
-        menu.getMenu().add(0, 1, 0, R.string.move_to_home);
-        menu.getMenu().add(0, 2, 1, R.string.remove_from_folder);
-        menu.getMenu().add(0, 3, 2, R.string.rename);
-        menu.getMenu().add(0, 4, 3, R.string.change_icon);
-        menu.getMenu().add(0, 5, 4, R.string.app_info);
-        if (repo.canUninstall(app)) menu.getMenu().add(0, 6, 5, R.string.uninstall);
-        menu.setOnMenuItemClickListener(mi -> {
-            switch (mi.getItemId()) {
-                case 1:
-                    if (!layout.moveOutOfFolder(folder, app.key)) {
-                        Toast.makeText(this, R.string.home_full, Toast.LENGTH_SHORT).show();
-                        return true;
-                    }
-                    afterFolderChange(folder);
-                    return true;
-                case 2:
-                    layout.removeFromFolder(folder, app.key);
-                    afterFolderChange(folder);
-                    return true;
-                case 3: rename(app); return true;
-                case 4: changeIcon(app); return true;
-                case 5: repo.openAppInfo(app, anchor); return true;
-                case 6: repo.uninstall(this, app); return true;
-                default: return false;
-            }
-        });
-        menu.show();
-    }
-
-    // A folder that dissolved (one app left) closes; otherwise it stays open, updated.
-    private void afterFolderChange(HomeLayout.Folder folder) {
-        refreshHome();
-        if (layout.itemFor(folder) == null || folder.apps.size() < 2) {
-            closeFolder();
-        } else {
-            populateFolder();
-            afterLayout(folderCard, () -> placeFolderCard(false)); // size may have changed
-        }
-    }
-
-    private void closeFolder() {
-        if (openFolder == null) return;
-        openFolder = null;
-        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(closeFolderOnBack);
-        folderOverlay.animate().alpha(0f).setDuration(120)
-                .withEndAction(() -> { if (openFolder == null) folderOverlay.setVisibility(View.GONE); })
-                .start();
-    }
-
-    private void renameFolder(HomeLayout.Folder folder) {
-        EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
-        input.setSingleLine(true);
-        input.setText(folder.name);
-        input.setHint(R.string.folder_default_name);
-        input.setSelectAllOnFocus(true);
-        FrameLayout box = new FrameLayout(this);
-        int pad = Math.round(dp(20));
-        box.setPadding(pad, Math.round(dp(8)), pad, 0);
-        box.addView(input);
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(R.string.rename_folder)
-                .setView(box)
-                .setPositiveButton(R.string.save, (d, w) -> {
-                    layout.renameFolder(folder, input.getText().toString());
-                    refreshHome();
-                    if (openFolder == folder) populateFolder();
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .create();
-        dialog.setOnShowListener(d -> {
-            input.requestFocus();
-            getSystemService(InputMethodManager.class).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
-        });
-        dialog.show();
-    }
-
-    /* ---------- per-app icon style ---------- */
-
-    private void changeIcon(AppEntry app) {
+    @Override
+    public void changeIcon(AppEntry app) {
         String[] styles = IconTheme.STYLES;
         String[] names = new String[styles.length + 1];
         names[0] = getString(R.string.icon_follow_theme);
@@ -855,9 +1080,9 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
                 .setSingleChoiceItems(names, checked, (d, which) -> {
                     prefs.setIconOverride(app.key, which == 0 ? null : styles[which - 1]);
                     repo.setTheme(IconTheme.from(prefs));
-                    adapter.applyPrefs(iconPx);
+                    adapter.applyPrefs(drawerIconPx, prefs.drawerColumns());
                     refreshHome();
-                    if (openFolder != null) populateFolder();
+                    folders.refresh();
                     d.dismiss();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
@@ -909,50 +1134,41 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
                 .start();
     }
 
+    // Instantly, mid-drag: the home screen must be visible to receive the drop.
+    private void hideDrawerForDrag() {
+        drawerOpen = false;
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(closeDrawerOnBack);
+        getSystemService(InputMethodManager.class).hideSoftInputFromWindow(search.getWindowToken(), 0);
+        drawer.animate().cancel();
+        homeContent.animate().cancel();
+        homeContent.setAlpha(1f);
+        homeContent.setVisibility(View.VISIBLE);
+        drawer.setVisibility(View.GONE);
+        search.setText("");
+    }
+
     @Override
     public void onAppClick(AppEntry app, View view) {
-        repo.launch(app, view);
+        launchKey(app.key, view);
         // Close after the launch animation starts, so returning home lands on the home screen.
         drawer.postDelayed(this::closeDrawer, 300);
     }
 
+    // Long-press in the drawer: pick the app up (drag it out to place it), or let
+    // go without moving for its menu. Locked: menu only.
     @Override
     public void onAppLongClick(AppEntry app, View view) {
-        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-        PopupMenu menu = new PopupMenu(this, view);
-        boolean pinned = layout.contains(app.key);
-        boolean hidden = prefs.hidden().contains(app.key);
-        if (!pinned) {
-            menu.getMenu().add(0, 1, 0, R.string.add_to_home);
-            if (prefs.showDock()) menu.getMenu().add(0, 4, 1, R.string.add_to_dock);
+        if (prefs.lockLayout()) {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            showAppMenu(app, view, null);
+            return;
         }
-        menu.getMenu().add(0, 5, 2, R.string.rename);
-        menu.getMenu().add(0, 7, 2, R.string.change_icon);
-        menu.getMenu().add(0, 6, 3, hidden ? R.string.unhide : R.string.hide);
-        menu.getMenu().add(0, 2, 4, R.string.app_info);
-        if (repo.canUninstall(app)) menu.getMenu().add(0, 3, 5, R.string.uninstall);
-        menu.setOnMenuItemClickListener(mi -> {
-            switch (mi.getItemId()) {
-                case 1: pin(app, HomeLayout.HOME, R.string.added_to_home, R.string.home_full); return true;
-                case 4: pin(app, HomeLayout.DOCK, R.string.added_to_dock, R.string.dock_full); return true;
-                case 5: rename(app); return true;
-                case 7: changeIcon(app); return true;
-                case 6:
-                    prefs.setHidden(app.key, !hidden);
-                    adapter.applyPrefs(iconPx);
-                    Toast.makeText(this, getString(hidden ? R.string.unhidden : R.string.hidden_toast,
-                            adapter.labelOf(app)), Toast.LENGTH_SHORT).show();
-                    return true;
-                case 2: repo.openAppInfo(app, view); return true;
-                case 3: repo.uninstall(this, app); return true;
-                default: return false;
-            }
-        });
-        menu.show();
+        startDrag(new DragState(null, app.key, app, view, true));
     }
 
     private void pin(AppEntry app, String container, int addedMsg, int fullMsg) {
-        if (layout.add(app.key, container, currentPage)) {
+        int page = HomeLayout.HOME.equals(container) ? currentPage : currentDockPage;
+        if (layout.add(app.key, container, page)) {
             refreshHome();
             Toast.makeText(this, getString(addedMsg, adapter.labelOf(app)), Toast.LENGTH_SHORT).show();
         } else {

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Neutral drop target (App info): highlights in blue while an icon is held over it. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_activated="true" android:drawable="@color/drop_info_active" />
+    <item android:drawable="@color/remove_bg" />
+</selector>
