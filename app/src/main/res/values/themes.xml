@@ -14,4 +14,10 @@
         <item name="android:colorPrimary">@color/primary_blue</item>
         <item name="android:windowSplashScreenBackground">@color/bg_primary</item>
     </style>
+
+    <!-- Settings draw their own opaque background instead of the wallpaper. -->
+    <style name="HearthSettingsTheme" parent="HearthTheme">
+        <item name="android:windowShowWallpaper">false</item>
+        <item name="android:windowBackground">@color/bg_primary</item>
+    </style>
 </resources>

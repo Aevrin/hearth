@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Hearth</string>
 
-    <string name="empty_hint">Swipe up for your apps.\nLong-press an app there to add it here.</string>
+    <string name="empty_hint">Swipe up for your apps.\nLong-press one to add it to the home screen or dock.</string>
     <string name="open_drawer">All apps</string>
     <string name="search_hint">Search apps</string>
     <string name="remove">Remove</string>
@@ -11,12 +11,37 @@
     <string name="added_to_home">Added %1$s to the home screen</string>
     <string name="home_full">The home screen is full</string>
     <string name="remove_from_home">Remove from home screen</string>
+    <string name="remove_from_dock">Remove from dock</string>
     <string name="app_info">App info</string>
     <string name="uninstall">Uninstall</string>
     <string name="cannot_launch">Couldn\'t open that app</string>
     <string name="cannot_uninstall">Couldn\'t start uninstall</string>
 
+    <string name="add_to_dock">Add to dock</string>
+    <string name="added_to_dock">Added %1$s to the dock</string>
+    <string name="dock_full">The dock is full</string>
+
     <string name="wallpaper">Wallpaper</string>
+    <string name="settings">Hearth settings</string>
+    <string name="back">Back</string>
+
+    <string name="home_prompt_title">Make Hearth your home app?</string>
+    <string name="home_prompt_body">Hearth only takes over the home screen once Android knows to use it. You can switch back any time in Settings → Apps → Default apps.</string>
+    <string name="home_prompt_yes">Set as home app</string>
+    <string name="home_prompt_no">Not now</string>
+
+    <string name="section_home">Home app</string>
+    <string name="home_is_default">Hearth is your default home app.</string>
+    <string name="home_not_default">Hearth isn\'t your default home app yet, so the Home button goes elsewhere.</string>
+    <string name="set_as_home">Set as default home app</string>
+    <string name="section_appearance">Appearance</string>
+    <string name="accent_colour">Accent colour</string>
+    <string name="drawer_opacity">App drawer background</string>
+    <string name="dock_opacity">Dock background</string>
+    <string name="percent">%1$d%%</string>
+    <string name="show_clock">Show clock</string>
+    <string name="show_dock">Show dock</string>
+    <string name="section_about">About</string>
     <string name="no_wallpaper_picker">No wallpaper picker found</string>
 
     <string name="about">About Hearth</string>

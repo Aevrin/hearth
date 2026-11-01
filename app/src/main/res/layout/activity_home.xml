@@ -15,19 +15,62 @@
             android:layout_height="match_parent"
             android:orientation="vertical">
 
+            <!-- Clock: time over date. Tap opens the alarm/clock app. -->
+            <LinearLayout
+                android:id="@+id/clock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?android:attr/selectableItemBackground"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingTop="24dp"
+                android:paddingBottom="8dp">
+
+                <TextClock
+                    android:id="@+id/clock_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-light"
+                    android:shadowColor="#99000000"
+                    android:shadowRadius="8"
+                    android:textColor="@color/text_primary"
+                    android:textSize="64sp" />
+
+                <TextClock
+                    android:id="@+id/clock_date"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:format12Hour="EEEE, MMMM d"
+                    android:format24Hour="EEEE, d MMMM"
+                    android:shadowColor="#99000000"
+                    android:shadowRadius="6"
+                    android:textColor="@color/aquamarine"
+                    android:textSize="16sp" />
+            </LinearLayout>
+
             <com.aevrin.hearth.CellLayout
                 android:id="@+id/grid"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:paddingStart="8dp"
-                android:paddingTop="16dp"
+                android:paddingTop="8dp"
                 android:paddingEnd="8dp" />
+
+            <!-- Dock: one row, icons only, on a translucent rounded bar. -->
+            <com.aevrin.hearth.CellLayout
+                android:id="@+id/dock"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/dock_height"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp" />
 
             <ImageView
                 android:id="@+id/drawer_handle"
                 android:layout_width="match_parent"
-                android:layout_height="36dp"
+                android:layout_height="28dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/open_drawer"
                 android:scaleType="center"
@@ -48,7 +91,7 @@
             android:textSize="16sp"
             android:visibility="gone" />
 
-        <!-- Appears while dragging a home icon; drop here to unpin it. -->
+        <!-- Appears while dragging a home or dock icon; drop here to unpin it. -->
         <TextView
             android:id="@+id/remove_zone"
             android:layout_width="match_parent"
@@ -62,12 +105,11 @@
             android:visibility="gone" />
     </FrameLayout>
 
-    <!-- App drawer: search on top, alphabetical grid below. -->
+    <!-- App drawer: search on top, alphabetical grid below. Background opacity is a setting. -->
     <LinearLayout
         android:id="@+id/drawer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/drawer_bg"
         android:clickable="true"
         android:focusable="false"
         android:orientation="vertical"
