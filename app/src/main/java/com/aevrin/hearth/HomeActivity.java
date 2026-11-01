@@ -110,6 +110,8 @@ public class HomeActivity extends Activity
     private Runnable pendingEdgeFlip;
     private int pendingEdgeDirection;
     private final Rect scratch = new Rect();
+    private DragState pendingDrag;  // a drawer long-press that turns into a drag if the finger moves
+    private PopupMenu pendingMenu;  // ...in which case its menu goes away
 
     private final OnBackInvokedCallback closeDrawerOnBack = this::closeDrawer;
 
@@ -237,7 +239,6 @@ public class HomeActivity extends Activity
         dropRemove.setOnDragListener((v, e) -> onTargetDrag(dropRemove, e));
         dropInfo.setOnDragListener((v, e) -> onTargetDrag(dropInfo, e));
         dropUninstall.setOnDragListener((v, e) -> onTargetDrag(dropUninstall, e));
-        drawer.setOnDragListener(this::onDrawerDrag);
         findViewById(R.id.root).setOnDragListener(this::onRootDrag);
 
         currentPage = prefs.defaultPage();
@@ -293,6 +294,7 @@ public class HomeActivity extends Activity
             lastTouchX = ev.getRawX();
             lastTouchY = ev.getRawY();
         }
+        if (pendingDrag != null) trackPendingDrag(ev);
         if (!folders.isOpen()) gestures.onTouchEvent(ev); // no page/drawer swipes over an open folder
         return super.dispatchTouchEvent(ev);
     }
@@ -726,24 +728,6 @@ public class HomeActivity extends Activity
         }
     }
 
-    // A drag that starts in the drawer: once the finger has moved a little, the
-    // drawer gets out of the way so the icon can be dropped on the home screen.
-    private boolean onDrawerDrag(View v, DragEvent e) {
-        if (!(e.getLocalState() instanceof DragState)) return false;
-        DragState st = (DragState) e.getLocalState();
-        if (!st.fromDrawer) return false;
-        if (e.getAction() == DragEvent.ACTION_DRAG_LOCATION && !st.movedFar) {
-            int[] loc = new int[2];
-            drawer.getLocationOnScreen(loc);
-            float dx = loc[0] + e.getX() - st.startX, dy = loc[1] + e.getY() - st.startY;
-            if (Math.hypot(dx, dy) > dp(28)) {
-                st.movedFar = true;
-                hideDrawerForDrag();
-            }
-        }
-        return e.getAction() != DragEvent.ACTION_DROP; // a drop on the drawer itself does nothing
-    }
-
     // Sees every drag start and end, so the end-of-drag tidy-up happens exactly once.
     private boolean onRootDrag(View v, DragEvent e) {
         if (!(e.getLocalState() instanceof DragState)) return false;
@@ -762,8 +746,6 @@ public class HomeActivity extends Activity
             // The icons were just rebuilt; wait until they're laid out, or the menu
             // anchors to a view still at (0,0) and opens at the top of the screen.
             afterLayout(grid, () -> showItemMenu(st.item, findItemView(st.item)));
-        } else if (st.fromDrawer && !st.movedFar && st.app != null) {
-            showAppMenu(st.app, st.view, null); // long-press in the drawer without dragging
         }
         return true;
     }
@@ -832,7 +814,7 @@ public class HomeActivity extends Activity
      * An app's menu, wherever it is: its own shortcuts first (Nova-style), then
      * actions. `item` is its home/dock cell, or null in the drawer.
      */
-    private void showAppMenu(AppEntry app, View anchor, HomeLayout.Item item) {
+    private PopupMenu showAppMenu(AppEntry app, View anchor, HomeLayout.Item item) {
         boolean locked = prefs.lockLayout();
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.setForceShowIcon(true);
@@ -891,6 +873,7 @@ public class HomeActivity extends Activity
             }
         });
         menu.show();
+        return menu;
     }
 
     private void showFolderMenu(HomeLayout.Item item, HomeLayout.Folder folder, View anchor) {
@@ -1154,16 +1137,43 @@ public class HomeActivity extends Activity
         drawer.postDelayed(this::closeDrawer, 300);
     }
 
-    // Long-press in the drawer: pick the app up (drag it out to place it), or let
-    // go without moving for its menu. Locked: menu only.
+    // Long-press in the drawer: the menu opens straight away, and if the finger
+    // then moves, the menu closes and the app is picked up instead (the drawer
+    // gets out of the way so it can be dropped on the home screen). Locked: menu only.
     @Override
     public void onAppLongClick(AppEntry app, View view) {
-        if (prefs.lockLayout()) {
-            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-            showAppMenu(app, view, null);
-            return;
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        PopupMenu menu = showAppMenu(app, view, null);
+        if (prefs.lockLayout()) return;
+        // Stop the list scrolling under the finger while we wait to see if it moves.
+        if (view.getParent() != null) view.getParent().requestDisallowInterceptTouchEvent(true);
+        DragState st = new DragState(null, app.key, app, view, true);
+        st.startX = lastTouchX;
+        st.startY = lastTouchY;
+        pendingDrag = st;
+        pendingMenu = menu;
+    }
+
+    // The rest of the long-press gesture still comes to this window, even with the menu up.
+    private void trackPendingDrag(MotionEvent ev) {
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_MOVE:
+                if (Math.hypot(ev.getRawX() - pendingDrag.startX, ev.getRawY() - pendingDrag.startY) < dp(12)) return;
+                DragState st = pendingDrag;
+                pendingDrag = null;
+                if (pendingMenu != null) pendingMenu.dismiss();
+                pendingMenu = null;
+                st.movedFar = true;
+                startDrag(st);        // captures the icon for the drag shadow first...
+                hideDrawerForDrag();  // ...then reveals the home screen to drop on
+                return;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                pendingDrag = null;   // let go without moving: the menu stays
+                pendingMenu = null;
+                return;
+            default:
         }
-        startDrag(new DragState(null, app.key, app, view, true));
     }
 
     private void pin(AppEntry app, String container, int addedMsg, int fullMsg) {

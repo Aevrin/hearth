@@ -49,9 +49,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - Alphabetical grid with a search box and an **A–Z strip** down the side. Matches ignore case
     and accents, and names that *start* with your search come first. Go opens the top match.
   - A **Most used** row at the top (optional), learned on the phone only.
-  - Long-press and drag an app out to place it on the home screen, dock or a folder; let go
-    without moving for its menu (shortcuts, Add to home/dock, Rename, Change icon, Hide, App info,
-    Uninstall).
+  - Long-press an app for its menu (shortcuts, Add to home/dock, Rename, Change icon, Hide,
+    App info, Uninstall). Keep holding and move your finger instead to pick it up and drop it on
+    the home screen, dock or a folder.
   - Swipe down at the top of the list, Back, or Home closes it.
 - **Settings** (long-press empty home space → Hearth settings):
   - **Home app:** whether Hearth is the default, with a button to make it so.
