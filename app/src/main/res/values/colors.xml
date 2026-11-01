@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark blue / aquamarine. Phase 2 adds theming. -->
+    <color name="bg_primary">#0F1A2A</color>
+    <color name="drawer_bg">#F20F1A2A</color>
+    <color name="surface">#2A3B53</color>
+    <color name="primary_blue">#375A82</color>
+    <color name="aquamarine">#06B6D4</color>
+    <color name="text_primary">#E6F0FF</color>
+    <color name="text_muted">#99E6F0FF</color>
+    <color name="remove_bg">#B3192534</color>
+    <color name="remove_bg_active">#E6DC2626</color>
+</resources>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A flame over a hearthstone, inside the 66dp adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- outer flame -->
+    <path
+        android:fillColor="#06B6D4"
+        android:pathData="M54,30c4,8 14,14 14,27c0,9 -6.3,15 -14,15s-14,-6 -14,-15c0,-6 3,-10 6,-13c0,5 2,8 5,9c-2,-9 1,-17 3,-23z" />
+    <!-- inner flame -->
+    <path
+        android:fillColor="#E6F0FF"
+        android:pathData="M54,50c2.5,4 6,6.5 6,11.5c0,4 -2.7,6.5 -6,6.5s-6,-2.5 -6,-6.5c0,-3.5 2.5,-6 6,-11.5z" />
+    <!-- hearthstone -->
+    <path
+        android:fillColor="#6C7EC5"
+        android:pathData="M34,74h40a2,2 0,0 1,2 2v2a2,2 0,0 1,-2 2h-40a2,2 0,0 1,-2 -2v-2a2,2 0,0 1,2 -2z" />
+</vector>

@@ -1,0 +1,6 @@
+# Local release signing only. Copy to signing.properties (gitignored) and fill in.
+# CI ignores this file and uses SIGNING_* env vars from GitHub secrets instead.
+store_file=/home/you/keys/upload.jks
+store_password=
+key_alias=upload
+key_password=

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hearth</string>
+
+    <string name="empty_hint">Swipe up for your apps.\nLong-press an app there to add it here.</string>
+    <string name="open_drawer">All apps</string>
+    <string name="search_hint">Search apps</string>
+    <string name="remove">Remove</string>
+
+    <string name="add_to_home">Add to home screen</string>
+    <string name="added_to_home">Added %1$s to the home screen</string>
+    <string name="home_full">The home screen is full</string>
+    <string name="remove_from_home">Remove from home screen</string>
+    <string name="app_info">App info</string>
+    <string name="uninstall">Uninstall</string>
+    <string name="cannot_launch">Couldn\'t open that app</string>
+    <string name="cannot_uninstall">Couldn\'t start uninstall</string>
+
+    <string name="wallpaper">Wallpaper</string>
+    <string name="no_wallpaper_picker">No wallpaper picker found</string>
+
+    <string name="about">About Hearth</string>
+    <string name="about_title">Hearth %1$s</string>
+    <string name="about_body">A small Android launcher.\n\nVibe-coded: written largely by an AI model (Claude) under human direction and testing. Read the code before trusting it with anything important.\n\nFree software under the GNU GPL v3 or later. No ads, no analytics, no network access.</string>
+    <string name="source_code">Source code</string>
+    <string name="source_url" translatable="false">https://github.com/Aevrin/hearth</string>
+</resources>

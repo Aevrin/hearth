@@ -1,0 +1,89 @@
+name: Play internal testing
+
+# Builds a signed .aab on every push to main and publishes it to the Play
+# internal testing track once the repo variable PLAY_PUBLISH is "true".
+#
+# Secrets:   UPLOAD_KEYSTORE_B64, UPLOAD_STORE_PASSWORD, UPLOAD_KEY_ALIAS,
+#            UPLOAD_KEY_PASSWORD, PLAY_SERVICE_ACCOUNT_JSON
+# Variables: PLAY_PUBLISH ("true" after the first manual upload),
+#            VERSION_CODE_OFFSET (optional, bump if versionCode ever collides)
+#
+# Forks: without these secrets the build step fails at signing, by design.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "LICENSE"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: play-internal
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GRADLE_VERSION: "9.8.2"
+      PACKAGE_NAME: com.aevrin.hearth
+      AAB_PATH: app/build/outputs/bundle/release/app-release.aab
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Version code
+        id: cfg
+        env:
+          VERSION_CODE_OFFSET: ${{ vars.VERSION_CODE_OFFSET }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: echo "version_code=$(( RUN_NUMBER + ${VERSION_CODE_OFFSET:-0} ))" >> "$GITHUB_OUTPUT"
+
+      - name: Restore upload keystore
+        env:
+          UPLOAD_KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$UPLOAD_KEYSTORE_B64" ]; then echo "::error::UPLOAD_KEYSTORE_B64 secret is not set"; exit 1; fi
+          printf '%s' "$UPLOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+
+      - name: Build signed bundle
+        env:
+          SIGNING_STORE_FILE: ${{ runner.temp }}/upload.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:bundleRelease -PversionCode=${{ steps.cfg.outputs.version_code }}
+
+      - name: Keep the bundle as a build artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hearth-${{ steps.cfg.outputs.version_code }}
+          path: ${{ env.AAB_PATH }}
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Publish to internal testing
+        if: vars.PLAY_PUBLISH == 'true'
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.PACKAGE_NAME }}
+          releaseFiles: ${{ env.AAB_PATH }}
+          tracks: internal
+          status: completed
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
