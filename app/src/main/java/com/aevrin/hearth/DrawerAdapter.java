@@ -13,12 +13,18 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.text.Collator;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
-/** The app drawer grid, filtered by the search box. */
+/**
+ * The app drawer grid, filtered by the search box. Hidden apps are left out of
+ * the list, and included in search results when the user allows it.
+ */
 final class DrawerAdapter extends RecyclerView.Adapter<DrawerAdapter.Holder> {
 
     interface Actions {
@@ -28,18 +34,45 @@ final class DrawerAdapter extends RecyclerView.Adapter<DrawerAdapter.Holder> {
 
     private final AppRepository repo;
     private final Actions actions;
+    private final Prefs prefs;
+
     private List<AppEntry> all = new ArrayList<>();
     private final List<AppEntry> shown = new ArrayList<>();
     private String query = "";
+    private Set<String> hidden = Collections.emptySet();
+    private boolean hiddenSearchable = true;
+    private boolean showLabels = true;
+    private int iconPx;
 
-    DrawerAdapter(AppRepository repo, Actions actions) {
+    DrawerAdapter(AppRepository repo, Prefs prefs, Actions actions) {
         this.repo = repo;
+        this.prefs = prefs;
         this.actions = actions;
     }
 
+    /** The name shown for an app: the user's rename if any, else its own label. */
+    String labelOf(AppEntry e) {
+        String custom = prefs.customLabel(e.key);
+        return custom != null ? custom : e.label;
+    }
+
     void setApps(List<AppEntry> apps) {
-        all = apps;
+        // Re-sort, since renamed apps may land somewhere else alphabetically.
+        List<AppEntry> sorted = new ArrayList<>(apps);
+        Collator collator = Collator.getInstance();
+        collator.setStrength(Collator.PRIMARY);
+        sorted.sort((a, b) -> collator.compare(labelOf(a), labelOf(b)));
+        all = sorted;
         refilter();
+    }
+
+    /** Re-reads hidden apps, labels and sizes from settings. */
+    void applyPrefs(int iconPx) {
+        this.hidden = prefs.hidden();
+        this.hiddenSearchable = prefs.hiddenSearchable();
+        this.showLabels = prefs.drawerLabels();
+        this.iconPx = iconPx;
+        setApps(all);
     }
 
     void setQuery(String q) {
@@ -56,14 +89,15 @@ final class DrawerAdapter extends RecyclerView.Adapter<DrawerAdapter.Holder> {
     private void refilter() {
         shown.clear();
         if (query.isEmpty()) {
-            shown.addAll(all);
+            for (AppEntry e : all) if (!hidden.contains(e.key)) shown.add(e);
         } else {
             // Names starting with the query first, then names containing it.
             List<AppEntry> contains = new ArrayList<>();
             for (AppEntry e : all) {
-                String name = fold(e.label);
+                if (hidden.contains(e.key) && !hiddenSearchable) continue;
+                String name = fold(labelOf(e));
                 if (name.startsWith(query)) shown.add(e);
-                else if (name.contains(query)) contains.add(e);
+                else if (name.contains(query) || fold(e.label).contains(query)) contains.add(e);
             }
             shown.addAll(contains);
         }
@@ -86,9 +120,17 @@ final class DrawerAdapter extends RecyclerView.Adapter<DrawerAdapter.Holder> {
     @Override
     public void onBindViewHolder(@NonNull Holder h, int position) {
         AppEntry e = shown.get(position);
+        String name = labelOf(e);
         h.app = e;
-        h.label.setText(e.label);
-        h.itemView.setContentDescription(e.label);
+        h.label.setText(name);
+        h.label.setVisibility(showLabels ? View.VISIBLE : View.GONE);
+        h.itemView.setContentDescription(name);
+        if (iconPx > 0) {
+            ViewGroup.LayoutParams lp = h.icon.getLayoutParams();
+            lp.width = iconPx;
+            lp.height = iconPx;
+            h.icon.setLayoutParams(lp);
+        }
         h.icon.setImageDrawable(null);
         repo.loadIcon(e, d -> { if (h.app == e) h.icon.setImageDrawable(d); });
         h.itemView.setOnClickListener(v -> actions.onAppClick(e, v));

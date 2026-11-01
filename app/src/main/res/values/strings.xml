@@ -42,6 +42,51 @@
     <string name="show_clock">Show clock</string>
     <string name="show_dock">Show dock</string>
     <string name="section_about">About</string>
+    <string name="rename">Rename</string>
+    <string name="save">Save</string>
+    <string name="reset_name">Original name</string>
+    <string name="hide">Hide from drawer</string>
+    <string name="unhide">Show in drawer</string>
+    <string name="hidden_toast">%1$s hidden. Find it with search, or unhide it in Settings.</string>
+    <string name="unhidden">%1$s is back in the drawer</string>
+
+    <string name="icon_size">Icon size</string>
+    <string name="small">Small</string>
+    <string name="medium">Medium</string>
+    <string name="large">Large</string>
+    <string name="home_labels">Labels on the home screen</string>
+    <string name="drawer_labels">Labels in the app drawer</string>
+
+    <string name="section_clock">Clock</string>
+    <string name="show_date">Show date</string>
+    <string name="clock_format">Time format</string>
+    <string name="clock_system">Phone setting</string>
+    <string name="clock_12">12-hour</string>
+    <string name="clock_24">24-hour</string>
+
+    <string name="section_layout">Layout</string>
+    <string name="home_columns">Home screen columns</string>
+    <string name="home_rows">Home screen rows</string>
+    <string name="home_pages">Home screen pages</string>
+    <string name="dock_slots">Dock slots</string>
+    <string name="drawer_columns">App drawer columns</string>
+    <string name="layout_note">Making the grid smaller never removes apps: ones that no longer fit move to a free spot, or wait out of sight until there\'s room again.</string>
+
+    <string name="section_apps">Apps</string>
+    <string name="hidden_apps_loading">Hidden apps…</string>
+    <string name="hidden_apps_button">Hidden apps (%1$d)</string>
+    <string name="hidden_apps_title">Hide from the app drawer</string>
+    <string name="hidden_searchable">Hidden apps appear in search</string>
+
+    <string name="section_backup">Backup</string>
+    <string name="backup_note">Saves every setting and your home screen layout to a JSON file wherever you choose.</string>
+    <string name="backup_export">Save backup</string>
+    <string name="backup_restore">Restore</string>
+    <string name="restore_confirm">Replace your current settings and home screen layout with the ones in a backup file?</string>
+    <string name="backup_saved">Backup saved</string>
+    <string name="backup_restored">Backup restored</string>
+    <string name="backup_failed">That didn\'t work: %1$s</string>
+
     <string name="no_wallpaper_picker">No wallpaper picker found</string>
 
     <string name="about">About Hearth</string>

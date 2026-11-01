@@ -8,7 +8,15 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 
-/** Appearance settings, stored in the app's private shared preferences. */
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
+
+/** Every user setting, stored in the app's private shared preferences. */
 final class Prefs {
 
     /** Accent choices offered in Settings, first is the default (aquamarine). */
@@ -23,15 +31,33 @@ final class Prefs {
             0xFFE6F0FF, // near-white
     };
 
+    static final float[] ICON_SCALES = {0.85f, 1f, 1.15f}; // small, medium, large
+    static final String CLOCK_SYSTEM = "system", CLOCK_12 = "12", CLOCK_24 = "24";
+
     static final int BG_RGB = 0x0F1A2A; // drawer and dock base colour, without alpha
 
     private static final String FILE = "hearth";
-    private static final String DRAWER_OPACITY = "drawer_opacity";
-    private static final String DOCK_OPACITY = "dock_opacity";
-    private static final String ACCENT = "accent";
-    private static final String SHOW_CLOCK = "show_clock";
-    private static final String SHOW_DOCK = "show_dock";
-    private static final String HOME_PROMPT_SHOWN = "home_prompt_shown";
+
+    // Keys. Each one below is also covered by toJson/fromJson for backups.
+    static final String DRAWER_OPACITY = "drawer_opacity";
+    static final String DOCK_OPACITY = "dock_opacity";
+    static final String ACCENT = "accent";
+    static final String SHOW_CLOCK = "show_clock";
+    static final String SHOW_DATE = "show_date";
+    static final String CLOCK_FORMAT = "clock_format";
+    static final String SHOW_DOCK = "show_dock";
+    static final String COLUMNS = "columns";
+    static final String ROWS = "rows";
+    static final String PAGES = "pages";
+    static final String DOCK_SLOTS = "dock_slots";
+    static final String DRAWER_COLUMNS = "drawer_columns";
+    static final String ICON_SIZE = "icon_size";
+    static final String HOME_LABELS = "home_labels";
+    static final String DRAWER_LABELS = "drawer_labels";
+    static final String HIDDEN = "hidden_apps";
+    static final String HIDDEN_SEARCHABLE = "hidden_searchable";
+    static final String LABELS = "custom_labels";
+    private static final String HOME_PROMPT_SHOWN = "home_prompt_shown"; // not backed up
 
     private final SharedPreferences sp;
 
@@ -39,13 +65,15 @@ final class Prefs {
         sp = c.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
     }
 
+    /* ---------- appearance ---------- */
+
     /** 0–100. */
     int drawerOpacity() { return sp.getInt(DRAWER_OPACITY, 95); }
-    void setDrawerOpacity(int v) { sp.edit().putInt(DRAWER_OPACITY, clamp(v)).apply(); }
+    void setDrawerOpacity(int v) { sp.edit().putInt(DRAWER_OPACITY, clamp(v, 0, 100)).apply(); }
 
     /** 0–100; 0 makes the dock background invisible. */
     int dockOpacity() { return sp.getInt(DOCK_OPACITY, 35); }
-    void setDockOpacity(int v) { sp.edit().putInt(DOCK_OPACITY, clamp(v)).apply(); }
+    void setDockOpacity(int v) { sp.edit().putInt(DOCK_OPACITY, clamp(v, 0, 100)).apply(); }
 
     int accent() { return sp.getInt(ACCENT, ACCENTS[0]); }
     void setAccent(int color) { sp.edit().putInt(ACCENT, color).apply(); }
@@ -53,19 +81,161 @@ final class Prefs {
     boolean showClock() { return sp.getBoolean(SHOW_CLOCK, true); }
     void setShowClock(boolean v) { sp.edit().putBoolean(SHOW_CLOCK, v).apply(); }
 
+    boolean showDate() { return sp.getBoolean(SHOW_DATE, true); }
+    void setShowDate(boolean v) { sp.edit().putBoolean(SHOW_DATE, v).apply(); }
+
+    /** CLOCK_SYSTEM, CLOCK_12 or CLOCK_24. */
+    String clockFormat() { return sp.getString(CLOCK_FORMAT, CLOCK_SYSTEM); }
+    void setClockFormat(String v) { sp.edit().putString(CLOCK_FORMAT, v).apply(); }
+
     boolean showDock() { return sp.getBoolean(SHOW_DOCK, true); }
     void setShowDock(boolean v) { sp.edit().putBoolean(SHOW_DOCK, v).apply(); }
+
+    /** 0 small, 1 medium, 2 large. */
+    int iconSize() { return clamp(sp.getInt(ICON_SIZE, 1), 0, ICON_SCALES.length - 1); }
+    void setIconSize(int v) { sp.edit().putInt(ICON_SIZE, clamp(v, 0, ICON_SCALES.length - 1)).apply(); }
+    float iconScale() { return ICON_SCALES[iconSize()]; }
+
+    boolean homeLabels() { return sp.getBoolean(HOME_LABELS, true); }
+    void setHomeLabels(boolean v) { sp.edit().putBoolean(HOME_LABELS, v).apply(); }
+
+    boolean drawerLabels() { return sp.getBoolean(DRAWER_LABELS, true); }
+    void setDrawerLabels(boolean v) { sp.edit().putBoolean(DRAWER_LABELS, v).apply(); }
+
+    /* ---------- layout ---------- */
+
+    int columns() { return clamp(sp.getInt(COLUMNS, 5), 3, 8); }
+    void setColumns(int v) { sp.edit().putInt(COLUMNS, clamp(v, 3, 8)).apply(); }
+
+    int rows() { return clamp(sp.getInt(ROWS, 6), 3, 9); }
+    void setRows(int v) { sp.edit().putInt(ROWS, clamp(v, 3, 9)).apply(); }
+
+    int pages() { return clamp(sp.getInt(PAGES, 1), 1, 7); }
+    void setPages(int v) { sp.edit().putInt(PAGES, clamp(v, 1, 7)).apply(); }
+
+    int dockSlots() { return clamp(sp.getInt(DOCK_SLOTS, 5), 3, 7); }
+    void setDockSlots(int v) { sp.edit().putInt(DOCK_SLOTS, clamp(v, 3, 7)).apply(); }
+
+    int drawerColumns() { return clamp(sp.getInt(DRAWER_COLUMNS, 5), 3, 7); }
+    void setDrawerColumns(int v) { sp.edit().putInt(DRAWER_COLUMNS, clamp(v, 3, 7)).apply(); }
+
+    /* ---------- apps ---------- */
+
+    Set<String> hidden() {
+        return Collections.unmodifiableSet(new HashSet<>(sp.getStringSet(HIDDEN, Collections.emptySet())));
+    }
+
+    void setHidden(String key, boolean hide) {
+        Set<String> s = new HashSet<>(sp.getStringSet(HIDDEN, Collections.emptySet()));
+        if (hide) s.add(key); else s.remove(key);
+        sp.edit().putStringSet(HIDDEN, s).apply();
+    }
+
+    void setHiddenAll(Set<String> keys) {
+        sp.edit().putStringSet(HIDDEN, new HashSet<>(keys)).apply();
+    }
+
+    /** Hidden apps still turn up when you search, so they stay reachable. */
+    boolean hiddenSearchable() { return sp.getBoolean(HIDDEN_SEARCHABLE, true); }
+    void setHiddenSearchable(boolean v) { sp.edit().putBoolean(HIDDEN_SEARCHABLE, v).apply(); }
+
+    /** Custom name for an app, or null for its own label. */
+    String customLabel(String key) {
+        String v = labels().optString(key, "");
+        return v.isEmpty() ? null : v;
+    }
+
+    void setCustomLabel(String key, String label) {
+        JSONObject o = labels();
+        try {
+            if (label == null || label.trim().isEmpty()) o.remove(key); else o.put(key, label.trim());
+        } catch (JSONException ignored) { }
+        sp.edit().putString(LABELS, o.toString()).apply();
+    }
+
+    private JSONObject labels() {
+        try {
+            return new JSONObject(sp.getString(LABELS, "{}"));
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    /* ---------- first-run prompt ---------- */
 
     boolean homePromptShown() { return sp.getBoolean(HOME_PROMPT_SHOWN, false); }
     void setHomePromptShown() { sp.edit().putBoolean(HOME_PROMPT_SHOWN, true).apply(); }
 
+    /* ---------- backup ---------- */
+
+    JSONObject toJson() throws JSONException {
+        JSONObject o = new JSONObject();
+        o.put(DRAWER_OPACITY, drawerOpacity());
+        o.put(DOCK_OPACITY, dockOpacity());
+        o.put(ACCENT, String.format("#%08X", accent()));
+        o.put(SHOW_CLOCK, showClock());
+        o.put(SHOW_DATE, showDate());
+        o.put(CLOCK_FORMAT, clockFormat());
+        o.put(SHOW_DOCK, showDock());
+        o.put(COLUMNS, columns());
+        o.put(ROWS, rows());
+        o.put(PAGES, pages());
+        o.put(DOCK_SLOTS, dockSlots());
+        o.put(DRAWER_COLUMNS, drawerColumns());
+        o.put(ICON_SIZE, iconSize());
+        o.put(HOME_LABELS, homeLabels());
+        o.put(DRAWER_LABELS, drawerLabels());
+        o.put(HIDDEN, new org.json.JSONArray(hidden()));
+        o.put(HIDDEN_SEARCHABLE, hiddenSearchable());
+        o.put(LABELS, labels());
+        return o;
+    }
+
+    /** Applies a backup. Unknown keys are ignored; missing keys keep their current value. */
+    void fromJson(JSONObject o) throws JSONException {
+        SharedPreferences.Editor e = sp.edit();
+        for (Iterator<String> it = o.keys(); it.hasNext(); ) {
+            String k = it.next();
+            switch (k) {
+                case DRAWER_OPACITY: case DOCK_OPACITY: case COLUMNS: case ROWS: case PAGES:
+                case DOCK_SLOTS: case DRAWER_COLUMNS: case ICON_SIZE:
+                    e.putInt(k, o.getInt(k));
+                    break;
+                case SHOW_CLOCK: case SHOW_DATE: case SHOW_DOCK: case HOME_LABELS:
+                case DRAWER_LABELS: case HIDDEN_SEARCHABLE:
+                    e.putBoolean(k, o.getBoolean(k));
+                    break;
+                case CLOCK_FORMAT:
+                    String f = o.getString(k);
+                    if (f.equals(CLOCK_SYSTEM) || f.equals(CLOCK_12) || f.equals(CLOCK_24)) e.putString(k, f);
+                    break;
+                case ACCENT:
+                    e.putInt(k, Color.parseColor(o.getString(k)));
+                    break;
+                case HIDDEN: {
+                    Set<String> s = new HashSet<>();
+                    org.json.JSONArray a = o.getJSONArray(k);
+                    for (int i = 0; i < a.length(); i++) s.add(a.getString(i));
+                    e.putStringSet(k, s);
+                    break;
+                }
+                case LABELS:
+                    e.putString(k, o.getJSONObject(k).toString());
+                    break;
+                default:
+                    break;
+            }
+        }
+        e.apply();
+    }
+
     /** The base background colour at a 0–100 opacity. */
     static int background(int opacity) {
-        return Color.argb(Math.round(clamp(opacity) * 2.55f),
+        return Color.argb(Math.round(clamp(opacity, 0, 100) * 2.55f),
                 Color.red(BG_RGB), Color.green(BG_RGB), Color.blue(BG_RGB));
     }
 
-    private static int clamp(int v) {
-        return Math.max(0, Math.min(100, v));
+    private static int clamp(int v, int min, int max) {
+        return Math.max(min, Math.min(max, v));
     }
 }

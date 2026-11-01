@@ -57,6 +57,15 @@
                 android:paddingTop="8dp"
                 android:paddingEnd="8dp" />
 
+            <!-- Page indicator, shown when there's more than one page. -->
+            <LinearLayout
+                android:id="@+id/page_dots"
+                android:layout_width="match_parent"
+                android:layout_height="20dp"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:visibility="gone" />
+
             <!-- Dock: one row, icons only, on a translucent rounded bar. -->
             <com.aevrin.hearth.CellLayout
                 android:id="@+id/dock"
