@@ -151,6 +151,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         header(R.string.section_clock);
         toggle(R.string.show_clock, prefs.showClock(), prefs::setShowClock);
         toggle(R.string.show_date, prefs.showDate(), prefs::setShowDate);
+        toggle(R.string.show_seconds, prefs.showSeconds(), prefs::setShowSeconds);
         String[] formats = {Prefs.CLOCK_SYSTEM, Prefs.CLOCK_12, Prefs.CLOCK_24};
         int fmt = 0;
         for (int i = 0; i < formats.length; i++) if (formats[i].equals(prefs.clockFormat())) fmt = i;

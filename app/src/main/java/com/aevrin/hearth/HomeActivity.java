@@ -267,20 +267,23 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         clock.setVisibility(prefs.showClock() ? View.VISIBLE : View.GONE);
         clockDate.setVisibility(prefs.showDate() ? View.VISIBLE : View.GONE);
         clockDate.setTextColor(accent);
+        // TextClock ticks every second on its own once the format includes seconds.
+        String sec = prefs.showSeconds() ? ":ss" : "";
         switch (prefs.clockFormat()) {
             case Prefs.CLOCK_12:
-                clockTime.setFormat12Hour("h:mm");
-                clockTime.setFormat24Hour("h:mm"); // used when the phone is set to 24-hour
+                clockTime.setFormat12Hour("h:mm" + sec);
+                clockTime.setFormat24Hour("h:mm" + sec); // used when the phone is set to 24-hour
                 break;
             case Prefs.CLOCK_24:
-                clockTime.setFormat12Hour("HH:mm");
-                clockTime.setFormat24Hour("HH:mm");
+                clockTime.setFormat12Hour("HH:mm" + sec);
+                clockTime.setFormat24Hour("HH:mm" + sec);
                 break;
             default:
-                clockTime.setFormat12Hour("h:mm");
-                clockTime.setFormat24Hour("HH:mm");
+                clockTime.setFormat12Hour("h:mm" + sec);
+                clockTime.setFormat24Hour("HH:mm" + sec);
                 break;
         }
+        clockTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, prefs.showSeconds() ? 52 : 64);
         drawerList.setVerticalScrollbarThumbDrawable(roundedBar(accent));
     }
 

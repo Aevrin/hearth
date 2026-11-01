@@ -44,6 +44,7 @@ final class Prefs {
     static final String ACCENT = "accent";
     static final String SHOW_CLOCK = "show_clock";
     static final String SHOW_DATE = "show_date";
+    static final String SHOW_SECONDS = "show_seconds";
     static final String CLOCK_FORMAT = "clock_format";
     static final String SHOW_DOCK = "show_dock";
     static final String COLUMNS = "columns";
@@ -85,6 +86,9 @@ final class Prefs {
     void setShowClock(boolean v) { sp.edit().putBoolean(SHOW_CLOCK, v).apply(); }
 
     boolean showDate() { return sp.getBoolean(SHOW_DATE, true); }
+
+    boolean showSeconds() { return sp.getBoolean(SHOW_SECONDS, false); }
+    void setShowSeconds(boolean v) { sp.edit().putBoolean(SHOW_SECONDS, v).apply(); }
     void setShowDate(boolean v) { sp.edit().putBoolean(SHOW_DATE, v).apply(); }
 
     /** CLOCK_SYSTEM, CLOCK_12 or CLOCK_24. */
@@ -220,6 +224,7 @@ final class Prefs {
         o.put(ACCENT, String.format("#%08X", accent()));
         o.put(SHOW_CLOCK, showClock());
         o.put(SHOW_DATE, showDate());
+        o.put(SHOW_SECONDS, showSeconds());
         o.put(CLOCK_FORMAT, clockFormat());
         o.put(SHOW_DOCK, showDock());
         o.put(COLUMNS, columns());
@@ -249,7 +254,7 @@ final class Prefs {
                 case DOCK_SLOTS: case DRAWER_COLUMNS: case ICON_SIZE:
                     e.putInt(k, o.getInt(k));
                     break;
-                case SHOW_CLOCK: case SHOW_DATE: case SHOW_DOCK: case HOME_LABELS:
+                case SHOW_CLOCK: case SHOW_DATE: case SHOW_SECONDS: case SHOW_DOCK: case HOME_LABELS:
                 case DRAWER_LABELS: case HIDDEN_SEARCHABLE:
                     e.putBoolean(k, o.getBoolean(k));
                     break;

@@ -87,6 +87,7 @@
 
     <string name="section_clock">Clock</string>
     <string name="show_date">Show date</string>
+    <string name="show_seconds">Show seconds</string>
     <string name="clock_format">Time format</string>
     <string name="clock_system">Phone setting</string>
     <string name="clock_12">12-hour</string>

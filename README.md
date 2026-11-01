@@ -55,7 +55,7 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     monochrome icon when it has one and an approximate silhouette when not), Duotone,
     Grayscale, Letters. Shapes: phone default, circle, squircle, rounded square, square,
     teardrop. Any app can have its own style via long-press → Change icon.
-  - **Clock:** show/hide, date on/off, phone / 12-hour / 24-hour.
+  - **Clock:** show/hide, date on/off, seconds on/off, phone / 12-hour / 24-hour.
   - **Layout:** home columns (3–8), rows (3–9), pages (1–7), dock on/off and slots (3–7),
     drawer columns (3–7). Shrinking never deletes apps: ones that don't fit move to a free
     spot, or wait out of sight until there's room.

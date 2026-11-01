@@ -137,7 +137,7 @@ final class AppRepository {
     void loadIcon(AppEntry e, Consumer<Drawable> callback) {
         Drawable cached = icons.get(e.key);
         if (cached != null) {
-            callback.accept(cached);
+            callback.accept(copyOf(cached));
             return;
         }
         IconTheme t = theme;
@@ -148,9 +148,19 @@ final class AppRepository {
             main.post(() -> {
                 if (generation != themeGeneration) return; // theme changed meanwhile
                 icons.put(e.key, d);
-                callback.accept(d);
+                callback.accept(copyOf(d));
             });
         });
+    }
+
+    /**
+     * Each view gets its own drawable sharing the same pixels. A drawable carries
+     * its own bounds and callback, so one instance shared between the grid, the
+     * drawer and a folder's mini icons would be resized out from under the others.
+     */
+    private Drawable copyOf(Drawable d) {
+        Drawable.ConstantState cs = d.getConstantState();
+        return cs != null ? cs.newDrawable(context.getResources()).mutate() : d;
     }
 
     private Drawable renderIcon(AppEntry e, IconTheme t, String label) {
