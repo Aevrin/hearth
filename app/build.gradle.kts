@@ -18,7 +18,7 @@ val storeFilePath = sign("store_file")
 
 // CI passes -PversionCode=<run number>. Play rejects any versionCode it has already seen.
 val versionCodeArg = providers.gradleProperty("versionCode").orNull?.toInt() ?: 1
-val versionLabel = "0.3" // bump by hand for each phase
+val versionLabel = "0.4" // bump by hand for each phase
 
 android {
     namespace = "com.aevrin.hearth"

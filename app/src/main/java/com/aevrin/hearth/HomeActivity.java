@@ -31,6 +31,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
@@ -84,6 +85,13 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
     private int pendingEdgeDirection;
 
     private final OnBackInvokedCallback closeDrawerOnBack = this::closeDrawer;
+    private final OnBackInvokedCallback closeFolderOnBack = this::closeFolder;
+
+    private View folderOverlay;
+    private View folderCard;
+    private TextView folderTitle;
+    private GridLayout folderGrid;
+    private HomeLayout.Folder openFolder;
 
     /** What's being dragged around the home screen. */
     private static final class DragState {
@@ -112,6 +120,12 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         drawer = findViewById(R.id.drawer);
         search = findViewById(R.id.search);
         drawerList = findViewById(R.id.drawer_list);
+        folderOverlay = findViewById(R.id.folder_overlay);
+        folderCard = findViewById(R.id.folder_card);
+        folderTitle = findViewById(R.id.folder_title);
+        folderGrid = findViewById(R.id.folder_grid);
+        folderOverlay.setOnClickListener(v -> closeFolder());
+        folderTitle.setOnClickListener(v -> { if (openFolder != null) renameFolder(openFolder); });
 
         // Edge to edge over the wallpaper: keep content clear of the system bars,
         // and the drawer clear of the keyboard too.
@@ -125,6 +139,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
 
         repo = new AppRepository(this, this);
         adapter = new DrawerAdapter(repo, prefs, this);
+        repo.setLabeler(adapter::labelOf); // letter icons use custom names
         drawerGrid = new GridLayoutManager(this, prefs.drawerColumns());
         drawerList.setLayoutManager(drawerGrid);
         drawerList.setAdapter(adapter);
@@ -198,7 +213,9 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (drawerOpen) {
+        if (openFolder != null) {
+            closeFolder();
+        } else if (drawerOpen) {
             closeDrawer();
         } else if (currentPage != 0) {
             currentPage = 0;
@@ -208,7 +225,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        gestures.onTouchEvent(ev);
+        if (openFolder == null) gestures.onTouchEvent(ev); // no page/drawer swipes over an open folder
         return super.dispatchTouchEvent(ev);
     }
 
@@ -226,6 +243,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         grid.setGrid(layout.columns(), layout.rows());
         dock.setGrid(layout.dockSlots(), 1);
         iconPx = Math.round(getResources().getDimension(R.dimen.icon_size) * prefs.iconScale());
+        repo.setTheme(IconTheme.from(prefs)); // re-renders icons only if the theme changed
         drawerGrid.setSpanCount(prefs.drawerColumns());
         adapter.applyPrefs(iconPx);
         applyAppearance();
@@ -307,6 +325,14 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
             if (!layout.fits(item.container, item.page, item.x, item.y)) continue; // waiting for room
             boolean inDock = HomeLayout.DOCK.equals(item.container);
             if (!inDock && item.page != currentPage) continue;
+            HomeLayout.Folder folder = layout.folder(item);
+            if (folder != null) {
+                View fv = makeFolderIcon(folder, inDock ? dock : grid, !inDock && homeLabels);
+                fv.setOnClickListener(view -> showFolder(folder));
+                fv.setOnLongClickListener(view -> { startDrag(item, view); return true; });
+                (inDock ? dock : grid).addView(fv, new CellLayout.LayoutParams(item.x, item.y));
+                continue;
+            }
             AppEntry app = repo.find(item.key);
             // Not found: still loading, or on a paused work profile. Keep the cell, skip the icon.
             if (app == null) continue;
@@ -372,6 +398,36 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         return v;
     }
 
+    /** Same layout as an app icon, with the folder's mini-icon plate in place of the icon. */
+    private View makeFolderIcon(HomeLayout.Folder folder, CellLayout parent, boolean showLabel) {
+        View v = LayoutInflater.from(this).inflate(R.layout.item_icon, parent, false);
+        ViewGroup box = (ViewGroup) v;
+        View img = v.findViewById(R.id.icon);
+        int index = box.indexOfChild(img);
+        box.removeView(img);
+        FolderIconView fi = new FolderIconView(this);
+        fi.setTheme(repo.theme());
+        box.addView(fi, index, new LinearLayout.LayoutParams(iconPx, iconPx));
+        int shown = 0;
+        for (String key : folder.apps) {
+            if (shown >= 4) break;
+            AppEntry app = repo.find(key);
+            if (app == null) continue;
+            int slot = shown++;
+            repo.loadIcon(app, d -> fi.setMini(slot, d));
+        }
+        TextView label = v.findViewById(R.id.label);
+        String name = folderName(folder);
+        label.setText(name);
+        label.setVisibility(showLabel ? View.VISIBLE : View.GONE);
+        v.setContentDescription(getString(R.string.folder_description, name, folder.apps.size()));
+        return v;
+    }
+
+    private String folderName(HomeLayout.Folder f) {
+        return f.name == null || f.name.isEmpty() ? getString(R.string.folder_default_name) : f.name;
+    }
+
     private void startDrag(HomeLayout.Item item, View view) {
         DragState state = new DragState(item, view);
         ClipData data = ClipData.newPlainText("hearth", item.key);
@@ -403,10 +459,16 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
                 boolean samePlace = container.equals(state.item.container)
                         && cell[0] == state.item.x && cell[1] == state.item.y
                         && (HomeLayout.DOCK.equals(container) || state.item.page == page);
+                HomeLayout.Item other = layout.at(container, page, cell[0], cell[1]);
+                boolean draggingFolder = HomeLayout.isFolderKey(state.item.key);
                 if (samePlace) {
                     state.droppedInPlace = true; // a long-press that didn't move: show the menu
+                } else if (other == null || draggingFolder) {
+                    layout.move(state.item, container, page, cell[0], cell[1]); // empty cell, or swap
+                } else if (layout.folder(other) != null) {
+                    layout.addToFolder(layout.folder(other), state.item); // onto a folder: join it
                 } else {
-                    layout.move(state.item, container, page, cell[0], cell[1]);
+                    layout.createFolder(other, state.item, ""); // app onto app: new folder
                 }
                 return true;
             }
@@ -462,6 +524,10 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
 
     /** Menu for a home or dock icon. The views were rebuilt, so find the icon again. */
     private void showIconMenu(HomeLayout.Item item) {
+        if (layout.folder(item) != null) {
+            showFolderMenu(item);
+            return;
+        }
         AppEntry app = repo.find(item.key);
         CellLayout parent = HomeLayout.DOCK.equals(item.container) ? dock : grid;
         View anchor = null;
@@ -472,6 +538,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         if (app == null || anchor == null) return;
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add(0, 5, 0, R.string.rename);
+        menu.getMenu().add(0, 7, 0, R.string.change_icon);
         menu.getMenu().add(0, 1, 1, HomeLayout.DOCK.equals(item.container)
                 ? R.string.remove_from_dock : R.string.remove_from_home);
         menu.getMenu().add(0, 2, 2, R.string.app_info);
@@ -480,6 +547,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         menu.setOnMenuItemClickListener(mi -> {
             switch (mi.getItemId()) {
                 case 5: rename(app); return true;
+                case 7: changeIcon(app); return true;
                 case 1: layout.remove(item); refreshHome(); return true;
                 case 2: repo.openAppInfo(app, finalAnchor); return true;
                 case 3: repo.uninstall(this, app); return true;
@@ -547,6 +615,192 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         refreshHome();
     }
 
+    /* ---------- folders ---------- */
+
+    private void showFolderMenu(HomeLayout.Item item) {
+        HomeLayout.Folder folder = layout.folder(item);
+        CellLayout parent = HomeLayout.DOCK.equals(item.container) ? dock : grid;
+        View anchor = null;
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            CellLayout.LayoutParams lp = (CellLayout.LayoutParams) parent.getChildAt(i).getLayoutParams();
+            if (lp.cellX == item.x && lp.cellY == item.y) anchor = parent.getChildAt(i);
+        }
+        if (folder == null || anchor == null) return;
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add(0, 1, 0, R.string.open_folder);
+        menu.getMenu().add(0, 2, 1, R.string.rename_folder);
+        menu.getMenu().add(0, 3, 2, R.string.ungroup);
+        menu.getMenu().add(0, 4, 3, HomeLayout.DOCK.equals(item.container)
+                ? R.string.remove_from_dock : R.string.remove_from_home);
+        menu.setOnMenuItemClickListener(mi -> {
+            switch (mi.getItemId()) {
+                case 1: showFolder(folder); return true;
+                case 2: renameFolder(folder); return true;
+                case 3: {
+                    int lost = layout.ungroup(item);
+                    refreshHome();
+                    if (lost > 0) Toast.makeText(this, getString(R.string.ungroup_no_room, lost), Toast.LENGTH_LONG).show();
+                    return true;
+                }
+                case 4: layout.remove(item); refreshHome(); return true;
+                default: return false;
+            }
+        });
+        menu.show();
+    }
+
+    private void showFolder(HomeLayout.Folder folder) {
+        openFolder = folder;
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Prefs.background(Math.max(prefs.drawerOpacity(), 85)));
+        bg.setCornerRadius(dp(24));
+        folderCard.setBackground(bg);
+        populateFolder();
+        if (folderOverlay.getVisibility() != View.VISIBLE) {
+            folderOverlay.setVisibility(View.VISIBLE);
+            folderOverlay.setAlpha(0f);
+            folderCard.setScaleX(0.9f);
+            folderCard.setScaleY(0.9f);
+            folderOverlay.animate().alpha(1f).setDuration(150).start();
+            folderCard.animate().scaleX(1f).scaleY(1f).setDuration(150).start();
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_OVERLAY, closeFolderOnBack);
+        }
+    }
+
+    private void populateFolder() {
+        HomeLayout.Folder folder = openFolder;
+        if (folder == null) return;
+        folderTitle.setText(folderName(folder));
+        folderGrid.removeAllViews();
+        boolean labels = prefs.homeLabels();
+        for (String key : folder.apps) {
+            AppEntry app = repo.find(key);
+            if (app == null) continue;
+            View v = makeIcon(app, grid, labels);
+            v.setOnClickListener(view -> {
+                repo.launch(app, view);
+                folderOverlay.postDelayed(this::closeFolder, 300);
+            });
+            v.setOnLongClickListener(view -> { showFolderAppMenu(folder, app, view); return true; });
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
+                    GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(GridLayout.UNDEFINED, 1f));
+            lp.width = 0;
+            lp.height = Math.round(dp(96));
+            folderGrid.addView(v, lp);
+        }
+    }
+
+    private void showFolderAppMenu(HomeLayout.Folder folder, AppEntry app, View anchor) {
+        anchor.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add(0, 1, 0, R.string.move_to_home);
+        menu.getMenu().add(0, 2, 1, R.string.remove_from_folder);
+        menu.getMenu().add(0, 3, 2, R.string.rename);
+        menu.getMenu().add(0, 4, 3, R.string.change_icon);
+        menu.getMenu().add(0, 5, 4, R.string.app_info);
+        if (repo.canUninstall(app)) menu.getMenu().add(0, 6, 5, R.string.uninstall);
+        menu.setOnMenuItemClickListener(mi -> {
+            switch (mi.getItemId()) {
+                case 1:
+                    if (!layout.moveOutOfFolder(folder, app.key)) {
+                        Toast.makeText(this, R.string.home_full, Toast.LENGTH_SHORT).show();
+                        return true;
+                    }
+                    afterFolderChange(folder);
+                    return true;
+                case 2:
+                    layout.removeFromFolder(folder, app.key);
+                    afterFolderChange(folder);
+                    return true;
+                case 3: rename(app); return true;
+                case 4: changeIcon(app); return true;
+                case 5: repo.openAppInfo(app, anchor); return true;
+                case 6: repo.uninstall(this, app); return true;
+                default: return false;
+            }
+        });
+        menu.show();
+    }
+
+    // A folder that dissolved (one app left) closes; otherwise it stays open, updated.
+    private void afterFolderChange(HomeLayout.Folder folder) {
+        refreshHome();
+        if (layout.itemFor(folder) == null || folder.apps.size() < 2) closeFolder();
+        else populateFolder();
+    }
+
+    private void closeFolder() {
+        if (openFolder == null) return;
+        openFolder = null;
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(closeFolderOnBack);
+        folderOverlay.animate().alpha(0f).setDuration(120)
+                .withEndAction(() -> { if (openFolder == null) folderOverlay.setVisibility(View.GONE); })
+                .start();
+    }
+
+    private void renameFolder(HomeLayout.Folder folder) {
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        input.setSingleLine(true);
+        input.setText(folder.name);
+        input.setHint(R.string.folder_default_name);
+        input.setSelectAllOnFocus(true);
+        FrameLayout box = new FrameLayout(this);
+        int pad = Math.round(dp(20));
+        box.setPadding(pad, Math.round(dp(8)), pad, 0);
+        box.addView(input);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.rename_folder)
+                .setView(box)
+                .setPositiveButton(R.string.save, (d, w) -> {
+                    layout.renameFolder(folder, input.getText().toString());
+                    refreshHome();
+                    if (openFolder == folder) populateFolder();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        dialog.setOnShowListener(d -> {
+            input.requestFocus();
+            getSystemService(InputMethodManager.class).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+        });
+        dialog.show();
+    }
+
+    /* ---------- per-app icon style ---------- */
+
+    private void changeIcon(AppEntry app) {
+        String[] styles = IconTheme.STYLES;
+        String[] names = new String[styles.length + 1];
+        names[0] = getString(R.string.icon_follow_theme);
+        for (int i = 0; i < styles.length; i++) names[i + 1] = getString(styleName(styles[i]));
+        String current = prefs.iconOverrides().get(app.key);
+        int checked = 0;
+        for (int i = 0; i < styles.length; i++) if (styles[i].equals(current)) checked = i + 1;
+        new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.change_icon_for, adapter.labelOf(app)))
+                .setSingleChoiceItems(names, checked, (d, which) -> {
+                    prefs.setIconOverride(app.key, which == 0 ? null : styles[which - 1]);
+                    repo.setTheme(IconTheme.from(prefs));
+                    adapter.applyPrefs(iconPx);
+                    refreshHome();
+                    if (openFolder != null) populateFolder();
+                    d.dismiss();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    static int styleName(String style) {
+        switch (style) {
+            case IconTheme.THEMED: return R.string.style_themed;
+            case IconTheme.DUOTONE: return R.string.style_duotone;
+            case IconTheme.GRAYSCALE: return R.string.style_grayscale;
+            case IconTheme.LETTER: return R.string.style_letter;
+            default: return R.string.style_original;
+        }
+    }
+
     /* ---------- app drawer ---------- */
 
     private void openDrawer() {
@@ -594,6 +848,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
             if (prefs.showDock()) menu.getMenu().add(0, 4, 1, R.string.add_to_dock);
         }
         menu.getMenu().add(0, 5, 2, R.string.rename);
+        menu.getMenu().add(0, 7, 2, R.string.change_icon);
         menu.getMenu().add(0, 6, 3, hidden ? R.string.unhide : R.string.hide);
         menu.getMenu().add(0, 2, 4, R.string.app_info);
         if (repo.canUninstall(app)) menu.getMenu().add(0, 3, 5, R.string.uninstall);
@@ -602,6 +857,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
                 case 1: pin(app, HomeLayout.HOME, R.string.added_to_home, R.string.home_full); return true;
                 case 4: pin(app, HomeLayout.DOCK, R.string.added_to_dock, R.string.dock_full); return true;
                 case 5: rename(app); return true;
+                case 7: changeIcon(app); return true;
                 case 6:
                     prefs.setHidden(app.key, !hidden);
                     adapter.applyPrefs(iconPx);

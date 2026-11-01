@@ -52,6 +52,9 @@ final class AppRepository {
     private Map<String, AppEntry> byKey = Collections.emptyMap();
     private final Map<String, Drawable> icons = new HashMap<>();
     private boolean loaded;
+    private IconTheme theme;
+    private java.util.function.Function<AppEntry, String> labeler = e -> e.label;
+    private int themeGeneration; // icons rendered under an older theme are discarded
 
     private final LauncherApps.Callback packageCallback = new LauncherApps.Callback() {
         @Override public void onPackageRemoved(String pkg, UserHandle user) { changed(pkg); }
@@ -115,20 +118,54 @@ final class AppRepository {
         reload();
     }
 
-    /** Calls back with the app's icon (badged for work-profile apps), now or once loaded. */
+    /** Switches icon theme; a different theme clears the icon cache so icons re-render. */
+    void setTheme(IconTheme t) {
+        if (theme != null && theme.signature.equals(t.signature)) return;
+        theme = t;
+        themeGeneration++;
+        icons.clear();
+    }
+
+    IconTheme theme() { return theme; }
+
+    /** Supplies display names (custom labels) for letter icons. */
+    void setLabeler(java.util.function.Function<AppEntry, String> labeler) {
+        this.labeler = labeler;
+    }
+
+    /** Calls back with the app's icon (themed, and badged for work-profile apps), now or once loaded. */
     void loadIcon(AppEntry e, Consumer<Drawable> callback) {
         Drawable cached = icons.get(e.key);
         if (cached != null) {
             callback.accept(cached);
             return;
         }
+        IconTheme t = theme;
+        int generation = themeGeneration;
+        String label = labeler.apply(e);
         worker.execute(() -> {
-            Drawable d = e.info.getBadgedIcon(0);
+            Drawable d = renderIcon(e, t, label);
             main.post(() -> {
+                if (generation != themeGeneration) return; // theme changed meanwhile
                 icons.put(e.key, d);
                 callback.accept(d);
             });
         });
+    }
+
+    private Drawable renderIcon(AppEntry e, IconTheme t, String label) {
+        String style = t == null ? IconTheme.ORIGINAL : t.styleFor(e.key);
+        if (t == null || t.isPassThrough(style)) return e.info.getBadgedIcon(0);
+        try {
+            android.graphics.Bitmap bmp = t.render(e.info.getIcon(0), style, label);
+            Drawable d = new android.graphics.drawable.BitmapDrawable(context.getResources(), bmp);
+            if (!Process.myUserHandle().equals(e.user)) {
+                d = context.getPackageManager().getUserBadgedIcon(d, e.user); // work-profile briefcase
+            }
+            return d;
+        } catch (RuntimeException ex) {
+            return e.info.getBadgedIcon(0); // never lose an icon to a rendering bug
+        }
     }
 
     void launch(AppEntry e, View from) {

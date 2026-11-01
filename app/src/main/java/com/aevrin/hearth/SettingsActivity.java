@@ -17,6 +17,7 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -50,6 +51,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     private TextView homeStatus;
     private Button homeButton;
     private Button hiddenButton;
+    private LinearLayout preview;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,7 +69,12 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         content = findViewById(R.id.settings_content);
         scroll = (ScrollView) content.getParent();
 
-        repo = new AppRepository(this, this); // for the hidden-apps list
+        repo = new AppRepository(this, this); // for the hidden-apps list and icon preview
+        repo.setTheme(IconTheme.from(prefs));
+        repo.setLabeler(e -> {
+            String c = prefs.customLabel(e.key);
+            return c != null ? c : e.label;
+        });
         repo.reload();
         build();
     }
@@ -86,6 +93,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
 
     @Override
     public void onAppsChanged() {
+        refreshPreview();
         if (hiddenButton != null) {
             hiddenButton.setEnabled(true);
             hiddenButton.setText(getString(R.string.hidden_apps_button, prefs.hidden().size()));
@@ -113,6 +121,31 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
                 prefs.iconSize(), prefs::setIconSize);
         toggle(R.string.home_labels, prefs.homeLabels(), prefs::setHomeLabels);
         toggle(R.string.drawer_labels, prefs.drawerLabels(), prefs::setDrawerLabels);
+
+        // Icons
+        header(R.string.section_icons);
+        preview = new LinearLayout(this);
+        preview.setOrientation(LinearLayout.HORIZONTAL);
+        preview.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams plp = matchWrap();
+        plp.topMargin = dp(12);
+        content.addView(preview, plp);
+        refreshPreview();
+        String[] styles = IconTheme.STYLES;
+        int[] styleNames = new int[styles.length];
+        int styleIdx = 0;
+        for (int i = 0; i < styles.length; i++) {
+            styleNames[i] = HomeActivity.styleName(styles[i]);
+            if (styles[i].equals(prefs.iconStyle())) styleIdx = i;
+        }
+        choice(R.string.icon_style, styleNames, styleIdx, i -> { prefs.setIconStyle(styles[i]); themeChanged(); });
+        String[] shapes = IconTheme.SHAPES;
+        int[] shapeNames = {R.string.shape_system, R.string.shape_circle, R.string.shape_squircle,
+                R.string.shape_rounded, R.string.shape_square, R.string.shape_teardrop};
+        int shapeIdx = 0;
+        for (int i = 0; i < shapes.length; i++) if (shapes[i].equals(prefs.iconShape())) shapeIdx = i;
+        choice(R.string.icon_shape, shapeNames, shapeIdx, i -> { prefs.setIconShape(shapes[i]); themeChanged(); });
+        note(R.string.icon_note);
 
         // Clock
         header(R.string.section_clock);
@@ -291,7 +324,8 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     private void choice(int s, int[] options, int selected, IntConsumer setter) {
         label(s);
         RadioGroup group = new RadioGroup(this);
-        group.setOrientation(RadioGroup.HORIZONTAL);
+        // Up to three short options fit side by side; longer lists stack.
+        group.setOrientation(options.length > 3 ? RadioGroup.VERTICAL : RadioGroup.HORIZONTAL);
         for (int i = 0; i < options.length; i++) {
             RadioButton rb = new RadioButton(this);
             rb.setId(View.generateViewId());
@@ -305,6 +339,26 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             rb.setOnCheckedChangeListener((b, on) -> { if (on) setter.accept(index); });
         }
         content.addView(group, matchWrap());
+    }
+
+    /** Accent or theme changed: re-render the preview (the home screen re-renders on return). */
+    private void themeChanged() {
+        repo.setTheme(IconTheme.from(prefs));
+        refreshPreview();
+    }
+
+    private void refreshPreview() {
+        if (preview == null) return;
+        preview.removeAllViews();
+        List<AppEntry> apps = repo.apps();
+        int size = dp(48);
+        for (int i = 0; i < Math.min(6, apps.size()); i++) {
+            ImageView iv = new ImageView(this);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
+            lp.setMarginEnd(dp(10));
+            preview.addView(iv, lp);
+            repo.loadIcon(apps.get(i), iv::setImageDrawable);
+        }
     }
 
     private LinearLayout labelRow(int s) {
@@ -362,6 +416,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             v.setContentDescription(String.format("#%06X", color & 0xFFFFFF));
             v.setOnClickListener(x -> {
                 prefs.setAccent(color);
+                repo.setTheme(IconTheme.from(prefs)); // themed/duotone icons use the accent
                 build(); // re-tint everything on this screen
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
@@ -443,6 +498,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
                 Toast.makeText(this, R.string.backup_saved, Toast.LENGTH_SHORT).show();
             } else if (requestCode == REQ_IMPORT) {
                 Backup.restore(this, uri);
+                repo.setTheme(IconTheme.from(prefs));
                 Toast.makeText(this, R.string.backup_restored, Toast.LENGTH_SHORT).show();
                 build(); // show the restored values
             }

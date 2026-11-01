@@ -57,6 +57,9 @@ final class Prefs {
     static final String HIDDEN = "hidden_apps";
     static final String HIDDEN_SEARCHABLE = "hidden_searchable";
     static final String LABELS = "custom_labels";
+    static final String ICON_STYLE = "icon_style";
+    static final String ICON_SHAPE = "icon_shape";
+    static final String ICON_OVERRIDES = "icon_overrides";
     private static final String HOME_PROMPT_SHOWN = "home_prompt_shown"; // not backed up
 
     private final SharedPreferences sp;
@@ -161,6 +164,48 @@ final class Prefs {
         }
     }
 
+    /* ---------- icon theme ---------- */
+
+    String iconStyle() { return oneOf(sp.getString(ICON_STYLE, IconTheme.ORIGINAL), IconTheme.STYLES, IconTheme.ORIGINAL); }
+    void setIconStyle(String v) { sp.edit().putString(ICON_STYLE, v).apply(); }
+
+    String iconShape() { return oneOf(sp.getString(ICON_SHAPE, IconTheme.SHAPE_SYSTEM), IconTheme.SHAPES, IconTheme.SHAPE_SYSTEM); }
+    void setIconShape(String v) { sp.edit().putString(ICON_SHAPE, v).apply(); }
+
+    /** Per-app style overrides, app key to style. */
+    java.util.Map<String, String> iconOverrides() {
+        java.util.Map<String, String> m = new java.util.HashMap<>();
+        JSONObject o = jsonPref(ICON_OVERRIDES);
+        for (Iterator<String> it = o.keys(); it.hasNext(); ) {
+            String k = it.next();
+            String v = o.optString(k);
+            for (String st : IconTheme.STYLES) if (st.equals(v)) m.put(k, v);
+        }
+        return m;
+    }
+
+    /** null clears the override, so the app follows the theme again. */
+    void setIconOverride(String key, String style) {
+        JSONObject o = jsonPref(ICON_OVERRIDES);
+        try {
+            if (style == null) o.remove(key); else o.put(key, style);
+        } catch (JSONException ignored) { }
+        sp.edit().putString(ICON_OVERRIDES, o.toString()).apply();
+    }
+
+    private JSONObject jsonPref(String key) {
+        try {
+            return new JSONObject(sp.getString(key, "{}"));
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    private static String oneOf(String v, String[] allowed, String fallback) {
+        for (String a : allowed) if (a.equals(v)) return v;
+        return fallback;
+    }
+
     /* ---------- first-run prompt ---------- */
 
     boolean homePromptShown() { return sp.getBoolean(HOME_PROMPT_SHOWN, false); }
@@ -188,6 +233,9 @@ final class Prefs {
         o.put(HIDDEN, new org.json.JSONArray(hidden()));
         o.put(HIDDEN_SEARCHABLE, hiddenSearchable());
         o.put(LABELS, labels());
+        o.put(ICON_STYLE, iconStyle());
+        o.put(ICON_SHAPE, iconShape());
+        o.put(ICON_OVERRIDES, jsonPref(ICON_OVERRIDES));
         return o;
     }
 
@@ -220,7 +268,14 @@ final class Prefs {
                     break;
                 }
                 case LABELS:
+                case ICON_OVERRIDES:
                     e.putString(k, o.getJSONObject(k).toString());
+                    break;
+                case ICON_STYLE:
+                    e.putString(k, oneOf(o.getString(k), IconTheme.STYLES, IconTheme.ORIGINAL));
+                    break;
+                case ICON_SHAPE:
+                    e.putString(k, oneOf(o.getString(k), IconTheme.SHAPES, IconTheme.SHAPE_SYSTEM));
                     break;
                 default:
                     break;

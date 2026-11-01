@@ -157,4 +157,44 @@
             android:scrollbars="vertical" />
     </LinearLayout>
 
+    <!-- An open folder: a card over a dimmed home screen. Tap outside or Back to close. -->
+    <FrameLayout
+        android:id="@+id/folder_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="false"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/folder_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginStart="24dp"
+            android:layout_marginEnd="24dp"
+            android:clickable="true"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/folder_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?android:attr/selectableItemBackground"
+                android:gravity="center"
+                android:padding="8dp"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp" />
+
+            <GridLayout
+                android:id="@+id/folder_grid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:columnCount="4" />
+        </LinearLayout>
+    </FrameLayout>
+
 </FrameLayout>
