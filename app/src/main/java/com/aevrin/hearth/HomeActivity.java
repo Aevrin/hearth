@@ -24,8 +24,11 @@ import android.view.GestureDetector;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
+import android.graphics.Rect;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -92,6 +95,9 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
     private TextView folderTitle;
     private GridLayout folderGrid;
     private HomeLayout.Folder openFolder;
+    private final Rect folderSource = new Rect(); // the folder icon's screen bounds
+    private View popupAnchor;
+    private float lastTouchX, lastTouchY;       // screen coordinates of the latest press
 
     /** What's being dragged around the home screen. */
     private static final class DragState {
@@ -121,6 +127,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         search = findViewById(R.id.search);
         drawerList = findViewById(R.id.drawer_list);
         folderOverlay = findViewById(R.id.folder_overlay);
+        popupAnchor = findViewById(R.id.popup_anchor);
         folderCard = findViewById(R.id.folder_card);
         folderTitle = findViewById(R.id.folder_title);
         folderGrid = findViewById(R.id.folder_grid);
@@ -225,6 +232,10 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            lastTouchX = ev.getRawX();
+            lastTouchY = ev.getRawY();
+        }
         if (openFolder == null) gestures.onTouchEvent(ev); // no page/drawer swipes over an open folder
         return super.dispatchTouchEvent(ev);
     }
@@ -266,6 +277,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
 
         clock.setVisibility(prefs.showClock() ? View.VISIBLE : View.GONE);
         clockDate.setVisibility(prefs.showDate() ? View.VISIBLE : View.GONE);
+        clockTime.setTextColor(accent);
         clockDate.setTextColor(accent);
         // TextClock ticks every second on its own once the format includes seconds.
         String sec = prefs.showSeconds() ? ":ss" : "";
@@ -331,7 +343,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
             HomeLayout.Folder folder = layout.folder(item);
             if (folder != null) {
                 View fv = makeFolderIcon(folder, inDock ? dock : grid, !inDock && homeLabels);
-                fv.setOnClickListener(view -> showFolder(folder));
+                fv.setOnClickListener(view -> showFolder(folder, view));
                 fv.setOnLongClickListener(view -> { startDrag(item, view); return true; });
                 (inDock ? dock : grid).addView(fv, new CellLayout.LayoutParams(item.x, item.y));
                 continue;
@@ -482,7 +494,9 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
                     removeZone.setVisibility(View.GONE);
                     removeZone.setActivated(false);
                     refreshHome();
-                    if (state.droppedInPlace) showIconMenu(state.item);
+                    // The icons were just rebuilt; wait until they're laid out, or the
+                    // menu anchors to a view still at (0,0) and opens at the top.
+                    if (state.droppedInPlace) afterLayout(grid, () -> showIconMenu(state.item));
                 }
                 return true;
             default:
@@ -560,9 +574,30 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         menu.show();
     }
 
-    /** Long-press on empty home space. */
-    private void showHomeMenu(View anchor) {
-        PopupMenu menu = new PopupMenu(this, anchor);
+    /** Runs once, right after the view's next layout pass. */
+    private static void afterLayout(View v, Runnable r) {
+        v.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                v.getViewTreeObserver().removeOnPreDrawListener(this);
+                r.run();
+                return true;
+            }
+        });
+        v.requestLayout();
+    }
+
+    /** A popup menu that opens at the last press, for presses on empty space. */
+    private PopupMenu menuAtTouch() {
+        int[] origin = new int[2];
+        ((View) popupAnchor.getParent()).getLocationOnScreen(origin);
+        popupAnchor.setX(lastTouchX - origin[0]);
+        popupAnchor.setY(lastTouchY - origin[1]);
+        return new PopupMenu(this, popupAnchor, Gravity.NO_GRAVITY);
+    }
+
+    /** Long-press on empty home space: the menu opens where you pressed. */
+    private void showHomeMenu(View ignored) {
+        PopupMenu menu = menuAtTouch();
         menu.getMenu().add(0, 1, 0, R.string.open_drawer);
         menu.getMenu().add(0, 2, 1, R.string.wallpaper);
         menu.getMenu().add(0, 3, 2, R.string.settings);
@@ -629,6 +664,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
             if (lp.cellX == item.x && lp.cellY == item.y) anchor = parent.getChildAt(i);
         }
         if (folder == null || anchor == null) return;
+        View finalFolderAnchor = anchor;
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add(0, 1, 0, R.string.open_folder);
         menu.getMenu().add(0, 2, 1, R.string.rename_folder);
@@ -637,7 +673,7 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
                 ? R.string.remove_from_dock : R.string.remove_from_home);
         menu.setOnMenuItemClickListener(mi -> {
             switch (mi.getItemId()) {
-                case 1: showFolder(folder); return true;
+                case 1: showFolder(folder, finalFolderAnchor); return true;
                 case 2: renameFolder(folder); return true;
                 case 3: {
                     int lost = layout.ungroup(item);
@@ -652,22 +688,47 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         menu.show();
     }
 
-    private void showFolder(HomeLayout.Folder folder) {
+    /** Opens a folder as a compact card right above its icon (below it if there's no room). */
+    private void showFolder(HomeLayout.Folder folder, View source) {
         openFolder = folder;
+        source.getGlobalVisibleRect(folderSource);
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(Prefs.background(Math.max(prefs.drawerOpacity(), 85)));
-        bg.setCornerRadius(dp(24));
+        bg.setCornerRadius(dp(20));
         folderCard.setBackground(bg);
         populateFolder();
-        if (folderOverlay.getVisibility() != View.VISIBLE) {
-            folderOverlay.setVisibility(View.VISIBLE);
-            folderOverlay.setAlpha(0f);
-            folderCard.setScaleX(0.9f);
-            folderCard.setScaleY(0.9f);
-            folderOverlay.animate().alpha(1f).setDuration(150).start();
-            folderCard.animate().scaleX(1f).scaleY(1f).setDuration(150).start();
+        boolean opening = folderOverlay.getVisibility() != View.VISIBLE;
+        folderOverlay.setVisibility(View.VISIBLE);
+        folderOverlay.setAlpha(1f);
+        if (opening) {
+            folderCard.setAlpha(0f); // hidden until it's measured and placed
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     OnBackInvokedDispatcher.PRIORITY_OVERLAY, closeFolderOnBack);
+        }
+        afterLayout(folderCard, () -> placeFolderCard(opening));
+    }
+
+    private void placeFolderCard(boolean animate) {
+        int[] origin = new int[2];
+        folderOverlay.getLocationOnScreen(origin);
+        int w = folderCard.getWidth(), h = folderCard.getHeight();
+        int ow = folderOverlay.getWidth(), oh = folderOverlay.getHeight();
+        int margin = Math.round(dp(8));
+        Insets bars = folderOverlay.getRootWindowInsets() == null ? Insets.NONE
+                : folderOverlay.getRootWindowInsets().getInsets(WindowInsets.Type.systemBars());
+        float cx = folderSource.exactCenterX() - origin[0];
+        float x = Math.max(margin, Math.min(ow - w - margin, cx - w / 2f));
+        float y = folderSource.top - origin[1] - h - margin;           // above the icon
+        if (y < bars.top + margin) y = folderSource.bottom - origin[1] + margin; // else below
+        y = Math.max(bars.top + margin, Math.min(oh - bars.bottom - h - margin, y));
+        folderCard.setX(x);
+        folderCard.setY(y);
+        if (animate) {
+            folderCard.setPivotX(cx - x);
+            folderCard.setPivotY(y < folderSource.top - origin[1] ? h : 0);
+            folderCard.setScaleX(0.6f);
+            folderCard.setScaleY(0.6f);
+            folderCard.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160).start();
         }
     }
 
@@ -676,6 +737,11 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         if (folder == null) return;
         folderTitle.setText(folderName(folder));
         folderGrid.removeAllViews();
+        int count = 0;
+        for (String key : folder.apps) if (repo.find(key) != null) count++;
+        // As wide as it needs to be, up to four columns.
+        folderGrid.setColumnCount(Math.max(3, Math.min(4, count)));
+        int cellW = Math.round(dp(76));
         boolean labels = prefs.homeLabels();
         for (String key : folder.apps) {
             AppEntry app = repo.find(key);
@@ -685,11 +751,11 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
                 repo.launch(app, view);
                 folderOverlay.postDelayed(this::closeFolder, 300);
             });
+            v.setMinimumWidth(cellW);
             v.setOnLongClickListener(view -> { showFolderAppMenu(folder, app, view); return true; });
-            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
-                    GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(GridLayout.UNDEFINED, 1f));
-            lp.width = 0;
-            lp.height = Math.round(dp(96));
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+            lp.width = cellW;
+            lp.height = Math.round(dp(92));
             folderGrid.addView(v, lp);
         }
     }
@@ -729,8 +795,12 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
     // A folder that dissolved (one app left) closes; otherwise it stays open, updated.
     private void afterFolderChange(HomeLayout.Folder folder) {
         refreshHome();
-        if (layout.itemFor(folder) == null || folder.apps.size() < 2) closeFolder();
-        else populateFolder();
+        if (layout.itemFor(folder) == null || folder.apps.size() < 2) {
+            closeFolder();
+        } else {
+            populateFolder();
+            afterLayout(folderCard, () -> placeFolderCard(false)); // size may have changed
+        }
     }
 
     private void closeFolder() {
@@ -813,6 +883,10 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         drawer.setAlpha(0f);
         drawer.setTranslationY(dp(80));
         drawer.animate().alpha(1f).translationY(0).setDuration(180).withEndAction(null).start();
+        // Hide the home screen behind it, so a see-through drawer shows only the wallpaper.
+        homeContent.animate().alpha(0f).setDuration(180)
+                .withEndAction(() -> { if (drawerOpen) homeContent.setVisibility(View.INVISIBLE); })
+                .start();
         drawerList.scrollToPosition(0);
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT, closeDrawerOnBack);
@@ -824,6 +898,8 @@ public class HomeActivity extends Activity implements AppRepository.Listener, Dr
         getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(closeDrawerOnBack);
         getSystemService(InputMethodManager.class).hideSoftInputFromWindow(search.getWindowToken(), 0);
         search.clearFocus();
+        homeContent.setVisibility(View.VISIBLE);
+        homeContent.animate().alpha(1f).setDuration(150).withEndAction(null).start();
         drawer.animate().alpha(0f).translationY(dp(80)).setDuration(150)
                 .withEndAction(() -> {
                     if (drawerOpen) return;

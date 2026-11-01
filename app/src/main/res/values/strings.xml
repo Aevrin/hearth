@@ -36,6 +36,10 @@
     <string name="set_as_home">Set as default home app</string>
     <string name="section_appearance">Appearance</string>
     <string name="accent_colour">Accent colour</string>
+    <string name="custom_colour">Custom colour</string>
+    <string name="hue">Hue</string>
+    <string name="saturation">Saturation</string>
+    <string name="brightness">Brightness</string>
     <string name="drawer_opacity">App drawer background</string>
     <string name="dock_opacity">Dock background</string>
     <string name="percent">%1$d%%</string>

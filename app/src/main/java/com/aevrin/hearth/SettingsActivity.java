@@ -9,7 +9,12 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Insets;
+import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.text.Editable;
+import android.text.InputFilter;
+import android.text.TextWatcher;
+import android.widget.EditText;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -424,7 +429,116 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             lp.setMarginEnd(dp(10));
             strip.addView(v, lp);
         }
+        // Custom colour: a rainbow swatch, ringed when the accent isn't one of the presets.
+        boolean custom = true;
+        for (int c : Prefs.ACCENTS) if (c == current) custom = false;
+        View pick = new View(this);
+        GradientDrawable rainbow = new GradientDrawable();
+        rainbow.setShape(GradientDrawable.OVAL);
+        rainbow.setGradientType(GradientDrawable.SWEEP_GRADIENT);
+        rainbow.setColors(new int[] {0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF, 0xFFFF00FF, 0xFFFF0000});
+        if (custom) rainbow.setStroke(dp(4), 0xFFE6F0FF);
+        pick.setBackground(rainbow);
+        pick.setContentDescription(getString(R.string.custom_colour));
+        pick.setOnClickListener(x -> showColorPicker());
+        strip.addView(pick, new LinearLayout.LayoutParams(size, size));
         content.addView(hs, matchWrap());
+    }
+
+    /** Hue / saturation / brightness sliders plus a hex field, with a live swatch. */
+    private void showColorPicker() {
+        float[] hsv = new float[3];
+        Color.colorToHSV(prefs.accent(), hsv);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(12), dp(24), 0);
+
+        View swatch = new View(this);
+        GradientDrawable sw = new GradientDrawable();
+        sw.setCornerRadius(dp(12));
+        swatch.setBackground(sw);
+        box.addView(swatch, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)));
+
+        EditText hex = new EditText(this);
+        hex.setSingleLine(true);
+        hex.setFilters(new InputFilter[] {new InputFilter.LengthFilter(7)});
+        hex.setTextColor(getColor(R.color.text_primary));
+        hex.setHint("#06B6D4");
+        LinearLayout.LayoutParams hlp = matchWrap();
+        hlp.topMargin = dp(8);
+        box.addView(hex, hlp);
+
+        SeekBar hue = pickerSlider(box, R.string.hue, 360, Math.round(hsv[0]));
+        SeekBar sat = pickerSlider(box, R.string.saturation, 100, Math.round(hsv[1] * 100));
+        SeekBar val = pickerSlider(box, R.string.brightness, 100, Math.round(hsv[2] * 100));
+        GradientDrawable hueTrack = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[] {0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF, 0xFFFF00FF, 0xFFFF0000});
+        hueTrack.setCornerRadius(dp(4));
+        hueTrack.setSize(1, dp(8));
+        hue.setProgressDrawable(hueTrack);
+
+        int[] color = {prefs.accent()};
+        boolean[] syncing = {false};
+        Runnable fromSliders = () -> {
+            color[0] = Color.HSVToColor(new float[] {hue.getProgress(), sat.getProgress() / 100f, val.getProgress() / 100f});
+            sw.setColor(color[0]);
+            for (SeekBar b : new SeekBar[] {hue, sat, val}) b.setThumbTintList(ColorStateList.valueOf(color[0]));
+            syncing[0] = true;
+            hex.setText(String.format("#%06X", color[0] & 0xFFFFFF));
+            syncing[0] = false;
+        };
+        SeekBar.OnSeekBarChangeListener l = new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar b, int p, boolean fromUser) { if (fromUser) fromSliders.run(); }
+            @Override public void onStartTrackingTouch(SeekBar b) { }
+            @Override public void onStopTrackingTouch(SeekBar b) { }
+        };
+        hue.setOnSeekBarChangeListener(l);
+        sat.setOnSeekBarChangeListener(l);
+        val.setOnSeekBarChangeListener(l);
+        hex.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence t, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence t, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable e) {
+                if (syncing[0]) return;
+                String t = e.toString().trim();
+                if (!t.startsWith("#")) t = "#" + t;
+                if (!t.matches("#[0-9a-fA-F]{6}")) return;
+                color[0] = Color.parseColor(t);
+                float[] h = new float[3];
+                Color.colorToHSV(color[0], h);
+                hue.setProgress(Math.round(h[0]));
+                sat.setProgress(Math.round(h[1] * 100));
+                val.setProgress(Math.round(h[2] * 100));
+                sw.setColor(color[0]);
+            }
+        });
+        fromSliders.run();
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.custom_colour)
+                .setView(box)
+                .setPositiveButton(R.string.save, (d, w) -> {
+                    prefs.setAccent(color[0] | 0xFF000000);
+                    repo.setTheme(IconTheme.from(prefs));
+                    build();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private SeekBar pickerSlider(LinearLayout box, int label, int max, int value) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextColor(getColor(R.color.text_muted));
+        t.setTextSize(13);
+        LinearLayout.LayoutParams lp = matchWrap();
+        lp.topMargin = dp(12);
+        box.addView(t, lp);
+        SeekBar b = new SeekBar(this);
+        b.setMax(max);
+        b.setProgress(value);
+        box.addView(b, matchWrap());
+        return b;
     }
 
     private LinearLayout.LayoutParams matchWrap() {

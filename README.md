@@ -29,13 +29,13 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     carry it to the next page.
   - Swipe sideways to change page (dots show where you are). Home returns to page one.
   - **Folders:** drop an app onto another app to make a folder, or onto a folder to add it.
-    Tap a folder to open it; tap its name to rename it. Long-press an app inside for Move to
+    Tap a folder to open it as a compact panel right above it; tap its name to rename it. Long-press an app inside for Move to
     home screen, Remove from folder, Rename, Change icon, App info, Uninstall. Long-press a
     folder without moving for Open, Rename, Ungroup, Remove. A folder left with one app turns
     back into that app.
   - Drag onto **Remove** at the top to unpin. Long-press an app without moving for a menu
     (Rename, Change icon, Remove, App info, Uninstall).
-  - Long-press empty space: All apps, Wallpaper, Hearth settings.
+  - Long-press empty space for a menu where you pressed: All apps, Wallpaper, Hearth settings.
   - Tap the clock to open your alarms.
 - **Dock:** a row of label-less icons on a translucent bar. When the dock is hidden, an
   arrow at the bottom opens the drawer instead.
@@ -48,7 +48,8 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 - **Settings** (long-press empty home space → Hearth settings):
   - **Home app:** whether Hearth is the default, with a button to make it so. Hearth also
     asks once, the first time it's opened while it isn't.
-  - **Appearance:** accent colour, drawer and dock background opacity, icon size,
+  - **Appearance:** accent colour (presets or any colour via a picker; the clock follows it),
+    drawer and dock background opacity (a see-through drawer shows only the wallpaper), icon size,
     labels on/off for the home screen and the drawer.
   - **Icons:** generated on the phone from each app's own icon, with a live preview.
     Styles: Original, Themed (the app's glyph in your accent colour on a dark plate, using its
