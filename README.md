@@ -67,7 +67,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     its cells are free; the highlight shows its whole footprint), or onto the trash can at the top
     to remove it. Let go **without moving** and it goes straight into **resize**: a frame with
     handles; drag an edge and the grid shows where it will snap. Widgets with their own settings
-    get a **Widget settings** button under the frame. Tap outside or Back to finish.
+    get a **Widget settings** button under the frame. Putting a widget down after dragging it
+    also leaves it in resize mode, and in resize mode you can drag the widget itself to move it
+    again. Tap outside or Back to finish.
   - Icons slide around widgets, never through them. Widgets live on home pages only (not the dock
     or folders). A widget whose app was uninstalled, or one restored from a backup on another
     phone, shows as "Widget unavailable" until you remove it.

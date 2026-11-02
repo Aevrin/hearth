@@ -1038,6 +1038,16 @@ public class HomeActivity extends Activity
         previewX = previewY = previewPage = -1;
         refreshHome();
         animateFrom(before, st.dropX >= 0 ? st.key : null, st.dropX - st.offX, st.dropY - st.offY);
+        // A widget put down on the grid (moved or not) goes into resize mode, like
+        // other launchers. Not if it was thrown in the trash.
+        if (st.item != null && HomeLayout.isWidgetKey(st.item.key) && st.dropX >= 0
+                && layout.items().contains(st.item)) {
+            HomeLayout.Item w = st.item;
+            afterLayout(grid, () -> {
+                View v = findItemView(w);
+                if (v != null) widgetReleased(w, v);
+            });
+        }
         folders.refresh(); // shows the new order, or closes a folder that dissolved
         syncPins();
         return true;
@@ -1092,6 +1102,17 @@ public class HomeActivity extends Activity
             if (!inside) folders.closeForDrag();
         }
         return e.getAction() != DragEvent.ACTION_DROP;
+    }
+
+    /** The view currently showing an item on the home screen or dock, or null. */
+    private View findItemView(HomeLayout.Item item) {
+        for (CellLayout cl : new CellLayout[] {grid, dock}) {
+            for (int i = 0; i < cl.getChildCount(); i++) {
+                View c = cl.getChildAt(i);
+                if (c.getTag(R.id.home_item) == item) return c;
+            }
+        }
+        return null;
     }
 
     /* ---------- drag animation ---------- */
@@ -1649,6 +1670,15 @@ public class HomeActivity extends Activity
             }
             @Override public void done() {
                 endResize();
+            }
+            @Override public void pickUp() {
+                // Drag the widget out of resize mode; putting it down brings resize back.
+                View v = findItemView(item);
+                if (v == null) return;
+                DragState st = new DragState(item, item.key, null, v, false);
+                v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                startDrag(st);
+                handler.post(HomeActivity.this::endResize); // not while the frame is handling this touch
             }
             @Override public void settings() {
                 endResize();

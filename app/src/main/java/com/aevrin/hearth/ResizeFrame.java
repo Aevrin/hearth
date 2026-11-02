@@ -33,6 +33,8 @@ final class ResizeFrame extends View {
         void done();
         /** The widget's own settings button was tapped. */
         void settings();
+        /** The widget itself was pressed and dragged: pick it up to move it. */
+        void pickUp();
     }
 
     private static final int NONE = 0, LEFT = 1, TOP = 2, RIGHT = 3, BOTTOM = 4;
@@ -53,6 +55,9 @@ final class ResizeFrame extends View {
     private boolean horizontal, vertical;
 
     private int dragging = NONE;
+    // A press on the widget itself (not a handle): dragging it picks the widget up.
+    private boolean pressInside;
+    private float pressX, pressY;
     // Optional "Widget settings" pill under the frame.
     private String settingsLabel;
     private final Paint pill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -164,6 +169,12 @@ final class ResizeFrame extends View {
                 }
                 dragging = handleAt(ex, ey);
                 if (dragging == NONE) {
+                    if (rect.contains(ex, ey)) {
+                        pressInside = true; // maybe the start of moving it
+                        pressX = ex;
+                        pressY = ey;
+                        return true;
+                    }
                     host.done(); // a tap anywhere else ends resize mode
                     return true;
                 }
@@ -171,10 +182,16 @@ final class ResizeFrame extends View {
                 performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
                 return true;
             case MotionEvent.ACTION_MOVE:
+                if (pressInside && Math.hypot(ex - pressX, ey - pressY) > 10 * density) {
+                    pressInside = false;
+                    host.pickUp();
+                    return true;
+                }
                 if (dragging == NONE) return true;
                 drag(ex, ey);
                 return true;
             case MotionEvent.ACTION_UP:
+                pressInside = false; // a tap on the widget keeps resize mode
                 if (dragging == NONE) return true;
                 dragging = NONE;
                 if (host.canPlace(snapX, snapY, snapW, snapH) && host.commit(snapX, snapY, snapW, snapH)) {
@@ -188,6 +205,7 @@ final class ResizeFrame extends View {
                 snapToCells();
                 return true;
             case MotionEvent.ACTION_CANCEL:
+                pressInside = false;
                 dragging = NONE;
                 host.preview(-1, -1, 1, 1, false);
                 snapToCells();
