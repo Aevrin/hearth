@@ -4,6 +4,7 @@
  */
 package com.aevrin.hearth;
 
+import android.animation.LayoutTransition;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -18,7 +19,9 @@ import android.content.pm.LauncherApps;
 import android.content.pm.ShortcutInfo;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
+import android.graphics.Canvas;
 import android.graphics.Insets;
+import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -41,6 +44,7 @@ import android.view.SubMenu;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
+import android.view.animation.DecelerateInterpolator;
 import android.view.WindowInsets;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -89,6 +93,9 @@ public class HomeActivity extends Activity
     // A widget being added: waiting on the bind permission or its setup screen.
     private int pendingWidgetId = -1;
     private int pendingWidgetPage;
+    // Live "make room" preview while hovering to insert.
+    private CellLayout previewTarget;
+    private int previewX = -1, previewY = -1, previewPage = -1;
     private ResizeFrame resizeFrame;   // non-null while a widget is being resized
     private HomeLayout.Item resizing;
 
@@ -102,6 +109,8 @@ public class HomeActivity extends Activity
     private LinearLayout dockDots;
     private ImageView handle;
     private TextView emptyHint;
+    private View statusScrim, navScrim;
+    private Insets barInsets = Insets.NONE;
     private View dropBar;
     private TextView dropRemove, dropInfo, dropUninstall;
     private View drawer;
@@ -139,6 +148,8 @@ public class HomeActivity extends Activity
         float startX, startY;       // screen coordinates where the drag began
         int grabX, grabY;           // which cell of a widget the finger is on
         HomeLayout.Folder folder;   // set when the drag started inside an open folder
+        float offX, offY;           // where the finger is on the view, for the shadow and landing
+        float dropX = -1, dropY;    // screen point of a drop on the grid or dock
         boolean movedFar;
         DragState(HomeLayout.Item item, String key, AppEntry app, View view, boolean fromDrawer) {
             this.item = item; this.key = key; this.app = app; this.view = view; this.fromDrawer = fromDrawer;
@@ -168,6 +179,8 @@ public class HomeActivity extends Activity
         dockDots = findViewById(R.id.dock_dots);
         handle = findViewById(R.id.drawer_handle);
         emptyHint = findViewById(R.id.empty_hint);
+        statusScrim = findViewById(R.id.status_scrim);
+        navScrim = findViewById(R.id.nav_scrim);
         dropBar = findViewById(R.id.drop_bar);
         dropRemove = findViewById(R.id.drop_remove);
         dropInfo = findViewById(R.id.drop_info);
@@ -188,6 +201,10 @@ public class HomeActivity extends Activity
             Insets ime = insets.getInsets(WindowInsets.Type.ime());
             homeContent.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             drawer.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+            Insets status = insets.getInsets(WindowInsets.Type.statusBars());
+            Insets nav = insets.getInsets(WindowInsets.Type.navigationBars());
+            barInsets = Insets.of(nav.left, status.top, nav.right, nav.bottom);
+            applySystemBars();
             return WindowInsets.CONSUMED;
         });
 
@@ -507,6 +524,74 @@ public class HomeActivity extends Activity
         }
         clockTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, prefs.showSeconds() ? 52 : 64);
         drawerList.setVerticalScrollbarThumbDrawable(roundedBar(style));
+        applySystemBars();
+        // "Text in accent colour" reaches the search box and the empty-screen hint too.
+        int text = getColor(R.color.text_primary);
+        if (prefs.labelAccent()) {
+            search.setTextColor(accent);
+            search.setHintTextColor(Accent.withAlpha(accent, 150));
+            style.paint(emptyHint);
+        } else {
+            search.setTextColor(text);
+            search.setHintTextColor(getColor(R.color.text_muted));
+            Accent.plain(emptyHint, text);
+        }
+    }
+
+    /**
+     * Colours behind the status and navigation bars: see-through (the default),
+     * the theme's background, or the accent. The bar icons switch to dark on a
+     * light colour so they stay readable.
+     */
+    private void applySystemBars() {
+        Accent a = prefs.accentStyle();
+        int status = prefs.statusBar(), nav = prefs.navBar();
+        boolean lightStatus = paintBar(statusScrim, status, a, barInsets.top, true, false);
+        // The navigation bar sits at the bottom, or on a side in landscape with buttons.
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) navScrim.getLayoutParams();
+        boolean side = barInsets.bottom == 0 && (barInsets.left > 0 || barInsets.right > 0);
+        if (side) {
+            lp.gravity = barInsets.left > 0 ? Gravity.START : Gravity.END;
+            lp.width = Math.max(barInsets.left, barInsets.right);
+            lp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+        } else {
+            lp.gravity = Gravity.BOTTOM;
+            lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            lp.height = barInsets.bottom;
+        }
+        navScrim.setLayoutParams(lp);
+        boolean lightNav = paintBar(navScrim, nav, a, side ? 1 : barInsets.bottom, false, side);
+        int flags = (lightStatus ? android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS : 0)
+                | (lightNav ? android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS : 0);
+        getWindow().getInsetsController().setSystemBarsAppearance(flags,
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+    }
+
+    /** Returns true when the bar is light enough to need dark icons. */
+    private boolean paintBar(View scrim, int style, Accent a, int size, boolean top, boolean side) {
+        if (style == Prefs.BAR_CLEAR || size <= 0) {
+            scrim.setVisibility(View.GONE);
+            return false;
+        }
+        if (top) {
+            ViewGroup.LayoutParams lp = scrim.getLayoutParams();
+            lp.height = size;
+            scrim.setLayoutParams(lp);
+        }
+        int solid;
+        if (style == Prefs.BAR_ACCENT) {
+            GradientDrawable d = a.drawable();
+            if (a.gradient) d.setOrientation(side ? GradientDrawable.Orientation.TOP_BOTTOM
+                    : GradientDrawable.Orientation.LEFT_RIGHT); // along the bar
+            scrim.setBackground(d);
+            solid = a.solid();
+        } else {
+            solid = Prefs.background(92);
+            scrim.setBackgroundColor(solid);
+        }
+        scrim.setVisibility(View.VISIBLE);
+        return android.graphics.Color.luminance(solid) > 0.5f && android.graphics.Color.alpha(solid) > 128;
     }
 
     private GradientDrawable roundedBar(Accent a) {
@@ -597,6 +682,8 @@ public class HomeActivity extends Activity
 
     @Override
     public void refreshHome() {
+        previewTarget = null; // a page change mid-drag starts a fresh preview
+        previewX = previewY = previewPage = -1;
         grid.removeAllViews();
         dock.removeAllViews();
         boolean homeLabels = prefs.homeLabels();
@@ -613,6 +700,7 @@ public class HomeActivity extends Activity
             HomeLayout.Folder folder = layout.folder(item);
             if (HomeLayout.isWidgetKey(item.key)) {
                 v = widgetView(item);
+                v.setTag(R.id.home_item, item);
                 v.setOnLongClickListener(view -> { onItemLongPress(item, view); return true; });
                 grid.addView(v, new CellLayout.LayoutParams(item.x, item.y, item.spanX, item.spanY));
                 continue;
@@ -624,6 +712,7 @@ public class HomeActivity extends Activity
                 if (v == null) continue;
                 v.setOnClickListener(view -> launchKey(item.key, view));
             }
+            v.setTag(R.id.home_item, item);
             v.setOnLongClickListener(view -> { onItemLongPress(item, view); return true; });
             parent.addView(v, new CellLayout.LayoutParams(item.x, item.y, item.spanX, item.spanY));
         }
@@ -789,8 +878,13 @@ public class HomeActivity extends Activity
             st.grabX = Math.max(0, Math.min(st.item.spanX - 1, (int) ((st.startX - loc[0]) / grid.cellWidth())));
             st.grabY = Math.max(0, Math.min(st.item.spanY - 1, (int) ((st.startY - loc[1]) / grid.cellHeight())));
         }
+        int[] at = new int[2];
+        st.view.getLocationOnScreen(at);
+        st.offX = Math.max(0, Math.min(st.view.getWidth(), st.startX - at[0]));
+        st.offY = Math.max(0, Math.min(st.view.getHeight(), st.startY - at[1]));
         ClipData data = ClipData.newPlainText("hearth", st.key);
-        if (!st.view.startDragAndDrop(data, new View.DragShadowBuilder(st.view), st, 0)) return;
+        if (!st.view.startDragAndDrop(data, new LiftShadow(st.view, st.offX, st.offY), st, 0)) return;
+        if (st.folder != null) folders.grid().setLayoutTransition(reorderTransition());
         if (!st.fromDrawer) st.view.setVisibility(View.INVISIBLE);
         dropRemove.setVisibility(st.item != null || st.folder != null ? View.VISIBLE : View.GONE);
         dropInfo.setVisibility(st.app != null ? View.VISIBLE : View.GONE);
@@ -860,15 +954,22 @@ public class HomeActivity extends Activity
                 boolean big = st.item != null && isBig(st.item);
                 int span = layout.iconSpan(container);
                 target.setHighlight(plan[1], plan[2], big ? st.item.spanX : span, big ? st.item.spanY : span, plan[0]);
+                if (plan[0] == CellLayout.HL_INSERT) previewInsert(target, container, st, plan[3], plan[1], plan[2]);
+                else clearPreview();
                 return true;
             }
             case DragEvent.ACTION_DRAG_EXITED:
+                clearPreview();
                 target.clearHighlight();
                 if (target == grid) cancelEdgeFlip();
                 return true;
             case DragEvent.ACTION_DROP: {
                 cancelEdgeFlip();
                 target.clearHighlight();
+                int[] loc = new int[2];
+                target.getLocationOnScreen(loc);
+                st.dropX = loc[0] + e.getX();
+                st.dropY = loc[1] + e.getY();
                 int[] plan = dropPlan(target, container, st, e.getX(), e.getY());
                 int x = plan[1], y = plan[2], page = plan[3];
                 HomeLayout.Item other = layout.at(container, page, x, y);
@@ -937,7 +1038,12 @@ public class HomeActivity extends Activity
             }
             layout.setFolderOrder(st.folder, order);
         }
+        folders.grid().setLayoutTransition(null);
+        Map<String, float[]> before = snapshotPositions();
+        previewTarget = null; // its views are about to be rebuilt where the preview showed them
+        previewX = previewY = previewPage = -1;
         refreshHome();
+        animateFrom(before, st.dropX >= 0 ? st.key : null, st.dropX - st.offX, st.dropY - st.offY);
         folders.refresh(); // shows the new order, or closes a folder that dissolved
         syncPins();
         return true;
@@ -992,6 +1098,126 @@ public class HomeActivity extends Activity
             if (!inside) folders.closeForDrag();
         }
         return e.getAction() != DragEvent.ACTION_DROP;
+    }
+
+    /* ---------- drag animation ---------- */
+
+    /** The picked-up icon, a little larger, held where your finger is on it. */
+    private static final class LiftShadow extends View.DragShadowBuilder {
+        private static final float SCALE = 1.1f;
+        private final float offX, offY;
+        LiftShadow(View v, float offX, float offY) {
+            super(v);
+            this.offX = offX;
+            this.offY = offY;
+        }
+        @Override
+        public void onProvideShadowMetrics(Point size, Point touch) {
+            View v = getView();
+            if (v == null || v.getWidth() == 0) {
+                super.onProvideShadowMetrics(size, touch);
+                return;
+            }
+            size.set(Math.round(v.getWidth() * SCALE), Math.round(v.getHeight() * SCALE));
+            touch.set(Math.round(offX * SCALE), Math.round(offY * SCALE));
+        }
+        @Override
+        public void onDrawShadow(Canvas c) {
+            View v = getView();
+            if (v == null) return;
+            c.scale(SCALE, SCALE);
+            v.draw(c);
+        }
+    }
+
+    // While hovering to insert, the icons that would move slide to where they'd go.
+    private void previewInsert(CellLayout target, String container, DragState st, int page, int x, int y) {
+        if (target == previewTarget && x == previewX && y == previewY && page == previewPage) return;
+        clearPreview();
+        Map<HomeLayout.Item, int[]> moves = layout.insertPlan(st.item, container, page, x, y);
+        if (moves == null) return;
+        previewTarget = target;
+        previewX = x;
+        previewY = y;
+        previewPage = page;
+        for (int i = 0; i < target.getChildCount(); i++) {
+            View c = target.getChildAt(i);
+            Object tag = c.getTag(R.id.home_item);
+            int[] to = tag == null ? null : moves.get(tag);
+            if (to == null) continue;
+            HomeLayout.Item it = (HomeLayout.Item) tag;
+            c.animate().translationX((to[0] - it.x) * target.cellWidth())
+                    .translationY((to[1] - it.y) * target.cellHeight())
+                    .setDuration(170).setInterpolator(new DecelerateInterpolator()).start();
+        }
+    }
+
+    private void clearPreview() {
+        if (previewTarget == null) return;
+        for (int i = 0; i < previewTarget.getChildCount(); i++) {
+            View c = previewTarget.getChildAt(i);
+            if (c.getTranslationX() != 0 || c.getTranslationY() != 0) {
+                c.animate().translationX(0).translationY(0).setDuration(170)
+                        .setInterpolator(new DecelerateInterpolator()).start();
+            }
+        }
+        previewTarget = null;
+        previewX = previewY = previewPage = -1;
+    }
+
+    /** Where each home and dock item is on screen right now (mid-animation included). */
+    private Map<String, float[]> snapshotPositions() {
+        Map<String, float[]> m = new HashMap<>();
+        int[] loc = new int[2];
+        for (CellLayout cl : new CellLayout[] {grid, dock}) {
+            for (int i = 0; i < cl.getChildCount(); i++) {
+                View c = cl.getChildAt(i);
+                Object tag = c.getTag(R.id.home_item);
+                if (!(tag instanceof HomeLayout.Item)) continue;
+                c.getLocationOnScreen(loc);
+                m.put(((HomeLayout.Item) tag).key, new float[] {loc[0], loc[1]});
+            }
+        }
+        return m;
+    }
+
+    // After the icons are rebuilt in their new places, each glides there from where
+    // it was; the dropped one from where you let go. No jumps.
+    private void animateFrom(Map<String, float[]> before, String droppedKey, float dropLeft, float dropTop) {
+        afterLayout(grid, () -> {
+            int[] loc = new int[2];
+            for (CellLayout cl : new CellLayout[] {grid, dock}) {
+                for (int i = 0; i < cl.getChildCount(); i++) {
+                    View c = cl.getChildAt(i);
+                    Object tag = c.getTag(R.id.home_item);
+                    if (!(tag instanceof HomeLayout.Item)) continue;
+                    String key = ((HomeLayout.Item) tag).key;
+                    float[] old = key.equals(droppedKey) ? new float[] {dropLeft, dropTop} : before.get(key);
+                    if (old == null) continue;
+                    c.animate().cancel();
+                    c.setTranslationX(0);
+                    c.setTranslationY(0);
+                    c.getLocationOnScreen(loc);
+                    float dx = old[0] - loc[0], dy = old[1] - loc[1];
+                    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+                    c.setTranslationX(dx);
+                    c.setTranslationY(dy);
+                    c.animate().translationX(0).translationY(0).setDuration(230)
+                            .setInterpolator(new DecelerateInterpolator(1.6f)).start();
+                }
+            }
+        });
+    }
+
+    /** Folder entries slide into their new places as you drag one around. */
+    private static LayoutTransition reorderTransition() {
+        LayoutTransition t = new LayoutTransition();
+        t.setAnimator(LayoutTransition.APPEARING, null);
+        t.setAnimator(LayoutTransition.DISAPPEARING, null);
+        t.setDuration(160);
+        t.setStartDelay(LayoutTransition.CHANGE_APPEARING, 0);
+        t.setStartDelay(LayoutTransition.CHANGE_DISAPPEARING, 0);
+        return t;
     }
 
     // Holding a dragged icon at the left or right edge flips to that page.

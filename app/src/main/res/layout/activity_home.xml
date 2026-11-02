@@ -265,4 +265,20 @@
         </LinearLayout>
     </FrameLayout>
 
+    <!-- Optional colour behind the status bar and the navigation bar (Settings > Appearance).
+         Sized to the bars in code. Drawn by Hearth because Android 15+ ignores bar colours. -->
+    <View
+        android:id="@+id/status_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_gravity="top"
+        android:visibility="gone" />
+
+    <View
+        android:id="@+id/nav_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_gravity="bottom"
+        android:visibility="gone" />
+
 </FrameLayout>

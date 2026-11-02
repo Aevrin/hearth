@@ -171,6 +171,8 @@ final class FolderPanel {
         HomeLayout.Folder f = folder;
         if (f == null) return;
         title.setText(nameOf(f));
+        if (host.prefs().labelAccent()) host.prefs().accentStyle().paint(title);
+        else Accent.plain(title, activity.getColor(R.color.text_primary));
         grid.removeAllViews();
         int cellW = Math.round(dp(76));
         int cellH = Math.round(dp(92));

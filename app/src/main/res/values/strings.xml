@@ -151,7 +151,7 @@
     <string name="dock_icon_size">Dock icon size</string>
     <string name="drawer_icon_size">Drawer icon size</string>
     <string name="label_size">Label size</string>
-    <string name="label_accent">Labels in accent colour</string>
+    <string name="label_accent">Text in accent colour (labels, folder names, search, hints)</string>
     <string name="label_shadow">Label shadow</string>
     <string name="label_two_lines">Allow two-line labels</string>
     <string name="dock_pages">Dock pages (swipe the dock)</string>
@@ -218,6 +218,12 @@
     <string name="widget_settings">Widget settings</string>
     <string name="widget_width">Width</string>
     <string name="widget_height">Height</string>
+    <string name="section_system_bars">System bars</string>
+    <string name="status_bar">Status bar</string>
+    <string name="nav_bar">Navigation bar (bottom buttons)</string>
+    <string name="bar_clear">See-through</string>
+    <string name="bar_background">Theme background</string>
+    <string name="bar_accent">Accent</string>
     <string name="widget_resize_hint">Drag the handles to resize. Tap outside to finish.</string>
     <string name="subgrid">Subgrid positioning (place icons and widgets on half cells)</string>
     <string name="widget_resize_no_room">Not enough free space around it for that size. Move things out of the way first.</string>

@@ -2,4 +2,6 @@
 <resources>
     <!-- View tag key: the layout listener that keeps an accent gradient sized to its text. -->
     <item name="accent_listener" type="id" />
+    <!-- View tag key: the HomeLayout.Item a home/dock view shows. -->
+    <item name="home_item" type="id" />
 </resources>

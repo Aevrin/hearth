@@ -78,6 +78,10 @@ final class Prefs {
     static final String AZ_SCROLLER = "az_scroller";
     static final String MOST_USED = "most_used";
     static final String SUBGRID = "subgrid";
+    static final String STATUS_BAR = "status_bar";
+    static final String NAV_BAR = "nav_bar";
+    /** System bar colouring. */
+    static final int BAR_CLEAR = 0, BAR_BACKGROUND = 1, BAR_ACCENT = 2;
     static final String GESTURE_UP = "gesture_up";
     static final String GESTURE_DOWN = "gesture_down";
     static final String GESTURE_LEFT = "gesture_left";
@@ -205,6 +209,11 @@ final class Prefs {
 
     /** Home on a half-cell grid: icons and widgets can sit between whole cells. */
     boolean subgrid() { return sp.getBoolean(SUBGRID, false); }
+
+    int statusBar() { return clamp(sp.getInt(STATUS_BAR, BAR_CLEAR), BAR_CLEAR, BAR_ACCENT); }
+    void setStatusBar(int v) { sp.edit().putInt(STATUS_BAR, v).apply(); }
+    int navBar() { return clamp(sp.getInt(NAV_BAR, BAR_CLEAR), BAR_CLEAR, BAR_ACCENT); }
+    void setNavBar(int v) { sp.edit().putInt(NAV_BAR, v).apply(); }
     void setSubgrid(boolean v) { sp.edit().putBoolean(SUBGRID, v).apply(); }
 
     /** What a swipe does: one of GESTURE_ACTIONS, or "app:<key>". */
@@ -394,6 +403,8 @@ final class Prefs {
         o.put(AZ_SCROLLER, azScroller());
         o.put(MOST_USED, mostUsed());
         o.put(SUBGRID, subgrid());
+        o.put(STATUS_BAR, statusBar());
+        o.put(NAV_BAR, navBar());
         for (String g : new String[] {GESTURE_UP, GESTURE_DOWN, GESTURE_LEFT, GESTURE_RIGHT}) o.put(g, gesture(g));
         return o;
     }
@@ -407,7 +418,7 @@ final class Prefs {
                 case DRAWER_OPACITY: case DOCK_OPACITY: case COLUMNS: case ROWS: case PAGES:
                 case DOCK_SLOTS: case DRAWER_COLUMNS: case ICON_SIZE:
                 case DOCK_ICON_SIZE: case DRAWER_ICON_SIZE: case LABEL_SIZE: case DEFAULT_PAGE: case DOCK_PAGES:
-                case ACCENT_DIRECTION:
+                case ACCENT_DIRECTION: case STATUS_BAR: case NAV_BAR:
                     e.putInt(k, o.getInt(k));
                     break;
                 case SHOW_CLOCK: case SHOW_DATE: case SHOW_SECONDS: case SHOW_DOCK: case HOME_LABELS:

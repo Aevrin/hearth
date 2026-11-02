@@ -30,6 +30,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 - **Home screen:** a clock, one or more pages of apps, shortcuts and folders, and a dock, over your wallpaper.
   - Tap to open. Long-press for a menu; keep holding and move your finger to **drag** instead,
     including between the grid, the dock and pages (hold at the left or right edge to flip page).
+  - Dragging is animated: the icon lifts slightly under your finger, the highlight glides from
+    cell to cell, icons slide aside *while you hover* to show where they'd go, and everything
+    settles into place (the dropped icon from where you let go) instead of jumping.
   - The cell under your finger lights up to show what a drop will do: a plain fill moves it there,
     a ring (dropping on the middle of an icon) makes or joins a **folder**, and a bar (dropping on
     the edge of an icon) **slides the others along** to make room.
@@ -82,8 +85,11 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - **Appearance:** accent as a **solid colour** (presets or any colour) or a **gradient** (presets,
     or pick start and end, swap them, choose diagonal / horizontal / vertical). The clock, headings,
     accent labels, themed and duotone icons, page dots and drop highlights use the full gradient;
-    single-colour things like switches use the midpoint. Drawer and dock background opacity.
-  - **Labels:** on/off for home and drawer, size, accent colour, shadow, two lines.
+    single-colour things like switches use the midpoint. **System bars:** the status bar and the
+    navigation bar (bottom buttons) can each be see-through (default), the theme background, or
+    the accent; their icons turn dark on light colours. Drawer and dock background opacity.
+  - **Labels:** on/off for home and drawer, size, shadow, two lines, and **text in accent colour**
+    (labels everywhere, folder names, the search box and hints).
   - **Icons:** generated on the phone from each app's own icon, with a live preview.
     Styles: Original, Themed, Duotone, Grayscale, Letters. Shapes: phone default, circle,
     squircle, rounded square, square, teardrop. Home icon size. Per-app overrides via long-press →

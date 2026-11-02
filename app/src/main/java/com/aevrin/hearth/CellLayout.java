@@ -4,6 +4,7 @@
  */
 package com.aevrin.hearth;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -12,6 +13,7 @@ import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
 
 /**
  * A fixed grid: each child occupies exactly one cell, placed by its LayoutParams.
@@ -45,6 +47,11 @@ public class CellLayout extends ViewGroup {
     private final Paint hlFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint hlStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF hlRect = new RectF();
+    // The highlight glides between cells and fades in and out rather than jumping.
+    private final RectF hlFrom = new RectF(), hlTo = new RectF();
+    private float hlAlpha, hlAlphaFrom, hlAlphaTo;
+    private int drawMode = HL_NONE;
+    private ValueAnimator hlAnim;
     private Accent accent = Accent.solid(0xFF06B6D4);
 
     public CellLayout(Context context) { super(context); init(); }
@@ -95,7 +102,31 @@ public class CellLayout extends ViewGroup {
         hlW = w;
         hlH = h;
         hlMode = mode;
-        invalidate();
+        boolean show = mode != HL_NONE && x >= 0 && cellWidth > 0;
+        if (show) {
+            float d = getResources().getDisplayMetrics().density;
+            float left = getPaddingLeft() + x * cellWidth, top = getPaddingTop() + y * cellHeight;
+            hlTo.set(left + 4 * d, top + 4 * d, left + cellWidth * w - 4 * d, top + cellHeight * h - 4 * d);
+            if (drawMode == HL_NONE || hlAlpha <= 0.01f) hlRect.set(hlTo); // appearing: start in place
+            drawMode = mode;
+        }
+        hlFrom.set(hlRect);
+        if (!show) hlTo.set(hlRect); // disappearing: fade where it is
+        hlAlphaFrom = hlAlpha;
+        hlAlphaTo = show ? 1f : 0f;
+        if (hlAnim != null) hlAnim.cancel();
+        hlAnim = ValueAnimator.ofFloat(0f, 1f);
+        hlAnim.setDuration(show ? 110 : 140);
+        hlAnim.setInterpolator(new DecelerateInterpolator());
+        hlAnim.addUpdateListener(a -> {
+            float t = (float) a.getAnimatedValue();
+            hlRect.set(hlFrom.left + (hlTo.left - hlFrom.left) * t, hlFrom.top + (hlTo.top - hlFrom.top) * t,
+                    hlFrom.right + (hlTo.right - hlFrom.right) * t, hlFrom.bottom + (hlTo.bottom - hlFrom.bottom) * t);
+            hlAlpha = hlAlphaFrom + (hlAlphaTo - hlAlphaFrom) * t;
+            if (hlAlpha <= 0.01f && hlAlphaTo == 0f) drawMode = HL_NONE;
+            invalidate();
+        });
+        hlAnim.start();
     }
 
     void clearHighlight() {
@@ -130,12 +161,12 @@ public class CellLayout extends ViewGroup {
 
     @Override
     protected void dispatchDraw(Canvas c) {
-        if (hlMode != HL_NONE && hlX >= 0 && cellWidth > 0) {
+        if (drawMode != HL_NONE && hlAlpha > 0.01f && cellWidth > 0) {
             float d = getResources().getDisplayMetrics().density;
-            float left = getPaddingLeft() + hlX * cellWidth, top = getPaddingTop() + hlY * cellHeight;
-            hlRect.set(left + 4 * d, top + 4 * d, left + cellWidth * hlW - 4 * d, top + cellHeight * hlH - 4 * d);
             float r = 16 * d;
-            switch (hlMode) {
+            hlFill.setAlpha(Math.round((hlFill.getShader() != null ? 255 : 56) * hlAlpha));
+            hlStroke.setAlpha(Math.round(255 * hlAlpha));
+            switch (drawMode) {
                 case HL_FOLDER: // ring: "drop to make a folder / join it"
                     c.drawRoundRect(hlRect, r, r, hlFill);
                     c.drawRoundRect(hlRect, r, r, hlStroke);

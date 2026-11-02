@@ -379,15 +379,15 @@ final class HomeLayout {
     }
 
     /**
-     * Drops `dragged` (or a new item for `key` when dragged is null) at a cell,
-     * sliding the icons from there onward along by one, in reading order, into the
-     * next free cell (or back toward the previous one). Returns false if the
-     * page is full, in which case nothing changes.
+     * Where the icons would go if something were dropped at (x, y) with the others
+     * sliding along by one, in reading order, into the next free cell (or back
+     * toward the previous one): a map of each icon that moves to its new {x, y}.
+     * Null if there's no room. Changes nothing; used to preview a drop.
      */
-    boolean insertAt(Item dragged, String key, String container, int page, int x, int y) {
-        if (!fits(container, page, x, y)) return false;
-        if (iconSpan(container) > 1) return false; // no sliding on the subgrid
-        if (dragged != null && (dragged.spanX > 1 || dragged.spanY > 1)) return false;
+    Map<Item, int[]> insertPlan(Item dragged, String container, int page, int x, int y) {
+        if (!fits(container, page, x, y)) return null;
+        if (iconSpan(container) > 1) return null; // no sliding on the subgrid
+        if (dragged != null && (dragged.spanX > 1 || dragged.spanY > 1)) return null;
         int cols = cols(container), rws = rowsOf(container), n = cols * rws;
         // Cells under widgets stay put; icons slide through the other cells only.
         Item[] cell = new Item[n];
@@ -404,18 +404,38 @@ final class HomeLayout {
             }
         }
         int target = y * cols + x;
-        if (blocked[target]) return false;
+        if (blocked[target]) return null;
         List<Integer> seq = new ArrayList<>(); // the free-flowing cells, in reading order
         for (int i = 0; i < n; i++) if (!blocked[i]) seq.add(i);
         int t = seq.indexOf(target);
+        Map<Item, int[]> moves = new LinkedHashMap<>();
         int empty = -1;
         for (int i = t; i < seq.size(); i++) if (cell[seq.get(i)] == null) { empty = i; break; }
         if (empty >= 0) {
-            for (int i = empty; i > t; i--) place(cell[seq.get(i - 1)], seq.get(i), cols);
+            for (int i = empty; i > t; i--) moves.put(cell[seq.get(i - 1)], xy(seq.get(i), cols));
         } else {
             for (int i = t; i >= 0; i--) if (cell[seq.get(i)] == null) { empty = i; break; }
-            if (empty < 0) return false;
-            for (int i = empty; i < t; i++) place(cell[seq.get(i + 1)], seq.get(i), cols);
+            if (empty < 0) return null;
+            for (int i = empty; i < t; i++) moves.put(cell[seq.get(i + 1)], xy(seq.get(i), cols));
+        }
+        return moves;
+    }
+
+    private static int[] xy(int index, int cols) {
+        return new int[] {index % cols, index / cols};
+    }
+
+    /**
+     * Drops `dragged` (or a new item for `key` when dragged is null) at a cell,
+     * sliding the others along (see insertPlan). Returns false if the page is
+     * full, in which case nothing changes.
+     */
+    boolean insertAt(Item dragged, String key, String container, int page, int x, int y) {
+        Map<Item, int[]> moves = insertPlan(dragged, container, page, x, y);
+        if (moves == null) return false;
+        for (Map.Entry<Item, int[]> m : moves.entrySet()) {
+            m.getKey().x = m.getValue()[0];
+            m.getKey().y = m.getValue()[1];
         }
         if (dragged != null) {
             place(dragged, container, page, x, y, 1, 1);
@@ -424,11 +444,6 @@ final class HomeLayout {
         }
         save();
         return true;
-    }
-
-    private static void place(Item it, int index, int cols) {
-        it.x = index % cols;
-        it.y = index / cols;
     }
 
     void remove(Item item) {
