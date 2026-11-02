@@ -283,6 +283,9 @@
 
     <string name="section_folders">Folders</string>
     <string name="preview_loading">Loading apps…</string>
+    <string name="folder_panel_bg">Open folder background</string>
+    <string name="folder_plate_bg">Folder icon background</string>
+    <string name="folder_plate_note">The plate behind the little icons on a folder (not used by folders with their own icon).</string>
     <string name="folder_spacing">Space between apps in a folder</string>
 
     <!-- Clock extras, drawer sorting -->

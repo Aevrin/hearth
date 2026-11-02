@@ -111,7 +111,10 @@ final class Prefs {
     /** Swipe-in zone widths, in dp: narrow, wide, ultra wide. */
     static final int[] ZONE_WIDTHS = {24, 48, 72};
     static final int HANDLE_TOP = 0, HANDLE_MIDDLE = 1, HANDLE_BOTTOM = 2;
-    /** Sidebar background: the theme's, a solid colour, or a gradient. Keys are "<side>" + suffix. */
+    /** Surfaces with their own background: each sidebar, the open folder, the folder icon's plate. */
+    static final String FOLDER_PANEL = "folder_panel", FOLDER_PLATE = "folder_plate";
+    static final String[] BG_SURFACES = {SIDEBAR_LEFT, SIDEBAR_RIGHT, FOLDER_PANEL, FOLDER_PLATE};
+    /** A surface's background: the theme's, a solid colour, or a gradient. Keys are "<surface>" + suffix. */
     static final int SB_THEME = 0, SB_SOLID = 1, SB_GRADIENT = 2;
     private static final String BG_MODE = "_bg_mode", BG_COLOR = "_bg_color", BG_COLOR2 = "_bg_color2",
             BG_DIRECTION = "_bg_direction", BG_OPACITY = "_bg_opacity";
@@ -320,24 +323,26 @@ final class Prefs {
     void setSidebarZone(int v) { sp.edit().putInt(SIDEBAR_ZONE, v).apply(); }
     void setSidebarHandleShown(boolean v) { sp.edit().putBoolean(SIDEBAR_HANDLE_SHOWN, v).apply(); }
 
-    int sidebarBgMode(String side) { return clamp(sp.getInt(side + BG_MODE, SB_THEME), SB_THEME, SB_GRADIENT); }
-    void setSidebarBgMode(String side, int v) { sp.edit().putInt(side + BG_MODE, v).apply(); }
-    int sidebarColor(String side) { return sp.getInt(side + BG_COLOR, 0xFF375A82); }
-    void setSidebarColor(String side, int v) { sp.edit().putInt(side + BG_COLOR, v | 0xFF000000).apply(); }
-    int sidebarColor2(String side) { return sp.getInt(side + BG_COLOR2, 0xFF06B6D4); }
-    void setSidebarColor2(String side, int v) { sp.edit().putInt(side + BG_COLOR2, v | 0xFF000000).apply(); }
-    int sidebarDirection(String side) { return clamp(sp.getInt(side + BG_DIRECTION, Accent.VERTICAL), Accent.DIAGONAL, Accent.VERTICAL); }
-    void setSidebarDirection(String side, int v) { sp.edit().putInt(side + BG_DIRECTION, v).apply(); }
-    /** 0–100; 0 is fully see-through. */
-    int sidebarOpacity(String side) { return clamp(sp.getInt(side + BG_OPACITY, 90), 0, 100); }
-    void setSidebarOpacity(String side, int v) { sp.edit().putInt(side + BG_OPACITY, clamp(v, 0, 100)).apply(); }
+    int bgMode(String side) { return clamp(sp.getInt(side + BG_MODE, SB_THEME), SB_THEME, SB_GRADIENT); }
+    void setBgMode(String side, int v) { sp.edit().putInt(side + BG_MODE, v).apply(); }
+    int bgColor(String side) { return sp.getInt(side + BG_COLOR, 0xFF375A82); }
+    void setBgColor(String side, int v) { sp.edit().putInt(side + BG_COLOR, v | 0xFF000000).apply(); }
+    int bgColor2(String side) { return sp.getInt(side + BG_COLOR2, 0xFF06B6D4); }
+    void setBgColor2(String side, int v) { sp.edit().putInt(side + BG_COLOR2, v | 0xFF000000).apply(); }
+    int bgDirection(String side) { return clamp(sp.getInt(side + BG_DIRECTION, Accent.VERTICAL), Accent.DIAGONAL, Accent.VERTICAL); }
+    void setBgDirection(String side, int v) { sp.edit().putInt(side + BG_DIRECTION, v).apply(); }
+    /** 0–100; 0 is fully see-through. The folder icon's plate starts lighter, as it always was. */
+    int bgOpacity(String side) {
+        return clamp(sp.getInt(side + BG_OPACITY, FOLDER_PLATE.equals(side) ? 70 : 90), 0, 100);
+    }
+    void setBgOpacity(String side, int v) { sp.edit().putInt(side + BG_OPACITY, clamp(v, 0, 100)).apply(); }
 
-    /** The sidebar's background colours as an Accent (for its gradient handling), or null for the theme's. */
-    Accent sidebarFill(String side) {
-        int mode = sidebarBgMode(side);
+    /** A surface's background colours as an Accent (for its gradient handling), or null for the theme's. */
+    Accent bgFill(String side) {
+        int mode = bgMode(side);
         if (mode == SB_THEME) return null;
-        int c = sidebarColor(side);
-        return new Accent(c, mode == SB_GRADIENT ? sidebarColor2(side) : c, mode == SB_GRADIENT, sidebarDirection(side));
+        int c = bgColor(side);
+        return new Accent(c, mode == SB_GRADIENT ? bgColor2(side) : c, mode == SB_GRADIENT, bgDirection(side));
     }
 
     private static String itemsKey(String side) {
@@ -557,12 +562,12 @@ final class Prefs {
         o.put(NEW_DOTS, newDots());
         o.put(DRAWER_SORT, drawerSort());
         o.put(SIDEBAR_LEFT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_LEFT)));
-        for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) {
-            o.put(side + BG_MODE, sidebarBgMode(side));
-            o.put(side + BG_COLOR, String.format("#%08X", sidebarColor(side)));
-            o.put(side + BG_COLOR2, String.format("#%08X", sidebarColor2(side)));
-            o.put(side + BG_DIRECTION, sidebarDirection(side));
-            o.put(side + BG_OPACITY, sidebarOpacity(side));
+        for (String side : BG_SURFACES) {
+            o.put(side + BG_MODE, bgMode(side));
+            o.put(side + BG_COLOR, String.format("#%08X", bgColor(side)));
+            o.put(side + BG_COLOR2, String.format("#%08X", bgColor2(side)));
+            o.put(side + BG_DIRECTION, bgDirection(side));
+            o.put(side + BG_OPACITY, bgOpacity(side));
         }
         o.put(SIDEBAR_RIGHT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_RIGHT)));
         return o;
@@ -573,8 +578,10 @@ final class Prefs {
         SharedPreferences.Editor e = sp.edit();
         for (Iterator<String> it = o.keys(); it.hasNext(); ) {
             String k = it.next();
-            // Per-sidebar background settings.
-            if (k.startsWith(SIDEBAR_LEFT + "_bg_") || k.startsWith(SIDEBAR_RIGHT + "_bg_")) {
+            // Per-surface background settings.
+            boolean surface = false;
+            for (String p : BG_SURFACES) if (k.startsWith(p + "_bg_")) surface = true;
+            if (surface) {
                 if (k.endsWith(BG_COLOR) || k.endsWith(BG_COLOR2)) e.putInt(k, Color.parseColor(o.getString(k)));
                 else if (k.endsWith(BG_MODE) || k.endsWith(BG_DIRECTION) || k.endsWith(BG_OPACITY)) e.putInt(k, o.getInt(k));
                 continue;

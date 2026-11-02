@@ -129,8 +129,8 @@ final class Sidebar {
         // Its own background: the theme's, a colour or a gradient, at its own opacity.
         Prefs prefs = host.prefs();
         String k = key(s);
-        Accent fill = prefs.sidebarFill(k);
-        int opacity = prefs.sidebarOpacity(k);
+        Accent fill = prefs.bgFill(k);
+        int opacity = prefs.bgOpacity(k);
         GradientDrawable bg;
         if (fill == null) {
             bg = new GradientDrawable();

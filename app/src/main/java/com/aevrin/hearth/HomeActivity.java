@@ -1107,6 +1107,7 @@ public class HomeActivity extends Activity
         box.removeView(img);
         FolderIconView fi = new FolderIconView(this);
         fi.setTheme(repo.theme());
+        fi.setPlate(prefs.bgFill(Prefs.FOLDER_PLATE), prefs.bgOpacity(Prefs.FOLDER_PLATE));
         box.addView(fi, index, new LinearLayout.LayoutParams(iconPx, iconPx));
         int shown = 0;
         for (String key : folder.apps) {

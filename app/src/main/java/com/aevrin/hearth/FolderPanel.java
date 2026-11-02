@@ -98,8 +98,7 @@ final class FolderPanel {
     void show(HomeLayout.Folder f, View from) {
         folder = f;
         from.getGlobalVisibleRect(source);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Prefs.background(Math.max(host.prefs().drawerOpacity(), 85)));
+        GradientDrawable bg = background(host.prefs());
         bg.setCornerRadius(dp(20));
         card.setBackground(bg);
         populate();
@@ -289,6 +288,21 @@ final class FolderPanel {
             activity.getSystemService(InputMethodManager.class).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
         });
         dialog.show();
+    }
+
+    /** The open folder's own background (Settings > Home screen > Folders). */
+    static GradientDrawable background(Prefs p) {
+        Accent fill = p.bgFill(Prefs.FOLDER_PANEL);
+        int opacity = p.bgOpacity(Prefs.FOLDER_PANEL);
+        GradientDrawable bg;
+        if (fill == null) {
+            bg = new GradientDrawable();
+            bg.setColor(Prefs.background(opacity));
+        } else {
+            bg = fill.drawable();
+            bg.setAlpha(Math.round(opacity * 2.55f));
+        }
+        return bg;
     }
 
     /**

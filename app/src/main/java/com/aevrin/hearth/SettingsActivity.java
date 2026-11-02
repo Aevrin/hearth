@@ -302,6 +302,12 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         flp.topMargin = dp(12);
         content.addView(box, flp);
         fillFolderPreview(folderPreview);
+
+        header(R.string.folder_panel_bg);
+        backgroundControls(Prefs.FOLDER_PANEL);
+        header(R.string.folder_plate_bg);
+        backgroundControls(Prefs.FOLDER_PLATE);
+        note(R.string.folder_plate_note);
     }
 
     // A small open folder with real icons, laid out exactly like the real one.
@@ -309,8 +315,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         g.removeAllViews();
         int iconPx = Math.round(getResources().getDimension(R.dimen.icon_size) * Prefs.ICON_SCALES[prefs.iconSize()]);
         int[] m = FolderPanel.metrics(this, prefs, iconPx);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Prefs.background(Math.max(prefs.drawerOpacity(), 85)));
+        GradientDrawable bg = FolderPanel.background(prefs);
         bg.setCornerRadius(dp(20));
         g.setBackground(bg);
         g.setPadding(dp(12), dp(12), dp(12), dp(12));
@@ -414,15 +419,20 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         header(title);
         toggle(R.string.sidebar_enabled, prefs.sidebar(side), v -> { prefs.setSidebar(side, v); build(); });
         if (!prefs.sidebar(side)) return;
-        int mode = prefs.sidebarBgMode(side);
+        backgroundControls(side);
+    }
+
+    /** Theme / colour / gradient, colour pickers, direction and opacity for one surface. */
+    private void backgroundControls(String side) {
+        int mode = prefs.bgMode(side);
         choice(R.string.sidebar_background, new int[] {R.string.sb_theme, R.string.sb_solid, R.string.sb_gradient},
-                mode, i -> { prefs.setSidebarBgMode(side, i); build(); });
+                mode, i -> { prefs.setBgMode(side, i); build(); });
         if (mode != Prefs.SB_THEME) {
             // Preview bar in the chosen fill.
-            Accent fill = prefs.sidebarFill(side);
+            Accent fill = prefs.bgFill(side);
             View bar = new View(this);
             GradientDrawable d = fill.drawable();
-            d.setAlpha(Math.round(prefs.sidebarOpacity(side) * 2.55f));
+            d.setAlpha(Math.round(prefs.bgOpacity(side) * 2.55f));
             d.setCornerRadius(dp(12));
             d.setStroke(dp(1), 0x33E6F0FF);
             bar.setBackground(d);
@@ -435,22 +445,22 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             rlp.topMargin = dp(8);
             content.addView(row, rlp);
             row.addView(colourButton(mode == Prefs.SB_GRADIENT ? R.string.gradient_start : R.string.sb_colour,
-                    prefs.sidebarColor(side), () -> showColorPicker(prefs.sidebarColor(side), c -> {
-                        prefs.setSidebarColor(side, c);
+                    prefs.bgColor(side), () -> showColorPicker(prefs.bgColor(side), c -> {
+                        prefs.setBgColor(side, c);
                         build();
                     })));
             if (mode == Prefs.SB_GRADIENT) {
-                row.addView(colourButton(R.string.gradient_end, prefs.sidebarColor2(side),
-                        () -> showColorPicker(prefs.sidebarColor2(side), c -> {
-                            prefs.setSidebarColor2(side, c);
+                row.addView(colourButton(R.string.gradient_end, prefs.bgColor2(side),
+                        () -> showColorPicker(prefs.bgColor2(side), c -> {
+                            prefs.setBgColor2(side, c);
                             build();
                         })));
                 choice(R.string.gradient_direction,
                         new int[] {R.string.direction_diagonal, R.string.direction_horizontal, R.string.direction_vertical},
-                        prefs.sidebarDirection(side), i -> { prefs.setSidebarDirection(side, i); build(); });
+                        prefs.bgDirection(side), i -> { prefs.setBgDirection(side, i); build(); });
             }
         }
-        slider(R.string.sidebar_opacity, prefs.sidebarOpacity(side), v -> prefs.setSidebarOpacity(side, v));
+        slider(R.string.sidebar_opacity, prefs.bgOpacity(side), v -> prefs.setBgOpacity(side, v));
     }
 
     private static final int[] GESTURE_NAMES = {R.string.g_none, R.string.g_drawer, R.string.g_search,

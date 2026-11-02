@@ -25,6 +25,17 @@ final class FolderIconView extends View {
         plate.setColor(0xB3192534);
     }
 
+    private Accent fill; // null: the theme's colour
+    private int opacity = 70;
+
+    /** The plate's own background: the theme's (fill null), a colour or a gradient, at an opacity. */
+    void setPlate(Accent fill, int opacity) {
+        this.fill = fill;
+        this.opacity = opacity;
+        pathSize = -1; // the gradient is sized with the path
+        invalidate();
+    }
+
     void setTheme(IconTheme t) {
         theme = t;
         pathSize = -1;
@@ -44,6 +55,14 @@ final class FolderIconView extends View {
         if (size != pathSize) {
             path = theme.shapePath(size);
             pathSize = size;
+            int alpha = Math.round(opacity * 2.55f);
+            if (fill == null) {
+                plate.setShader(null);
+                plate.setColor(Accent.withAlpha(0xFF192534, alpha));
+            } else {
+                plate.setColor(Accent.withAlpha(fill.solid(), alpha));
+                plate.setShader(fill.shader(0, 0, size, size, alpha));
+            }
         }
         c.save();
         c.translate((getWidth() - size) / 2f, (getHeight() - size) / 2f);
