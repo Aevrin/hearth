@@ -125,6 +125,7 @@ The home, dock and folder layout is saved as readable JSON in the app's private 
 ## Privacy
 
 Hearth collects nothing and has no internet permission. See the [privacy policy](PRIVACY.md).
+To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## Try it
 
