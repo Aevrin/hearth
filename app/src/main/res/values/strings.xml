@@ -160,4 +160,30 @@
     <string name="allow_rotation">Allow rotation</string>
     <string name="az_scroller">A–Z scroller in drawer</string>
     <string name="most_used_setting">Most used apps at top of drawer</string>
+
+    <!-- 0.6: settings pages, gradient accent -->
+    <string name="section_settings">Settings</string>
+    <string name="section_home_screen">Home screen</string>
+    <string name="section_dock">Dock</string>
+    <string name="section_drawer">App drawer</string>
+    <string name="section_backgrounds">Backgrounds</string>
+    <string name="summary_appearance">Accent colour or gradient, drawer and dock backgrounds</string>
+    <string name="summary_icons">Style, shape and size</string>
+    <string name="summary_labels">Size, colour, shadow, two lines</string>
+    <string name="summary_clock">Show, date, seconds, format</string>
+    <string name="summary_home_screen">Grid, pages, lock, wallpaper, rotation</string>
+    <string name="summary_dock">Slots, pages, icon size</string>
+    <string name="summary_drawer">Columns, icon size, A–Z, most used, hidden apps</string>
+    <string name="summary_backup">Save or restore everything</string>
+    <string name="accent_mode">Style</string>
+    <string name="accent_solid">Solid</string>
+    <string name="accent_gradient">Gradient</string>
+    <string name="gradient_start">Start</string>
+    <string name="gradient_end">End</string>
+    <string name="gradient_swap">Swap</string>
+    <string name="gradient_direction">Direction</string>
+    <string name="direction_diagonal">Diagonal</string>
+    <string name="direction_horizontal">Horizontal</string>
+    <string name="direction_vertical">Vertical</string>
+    <string name="gradient_note">The clock, headings, accent labels, themed and duotone icons and drop highlights use the full gradient. Things that can only be one colour, like switches, use the colour halfway along.</string>
 </resources>

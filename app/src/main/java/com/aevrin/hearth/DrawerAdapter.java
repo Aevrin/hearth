@@ -206,7 +206,7 @@ final class DrawerAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         if (row instanceof String) {
             TextView t = (TextView) vh.itemView;
             t.setText((String) row);
-            t.setTextColor(prefs.accent());
+            prefs.accentStyle().paint(t);
             return;
         }
         Holder h = (Holder) vh;

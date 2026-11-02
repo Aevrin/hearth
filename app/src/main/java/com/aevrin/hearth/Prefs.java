@@ -41,7 +41,10 @@ final class Prefs {
     // Keys. Each one below is also covered by toJson/fromJson for backups.
     static final String DRAWER_OPACITY = "drawer_opacity";
     static final String DOCK_OPACITY = "dock_opacity";
-    static final String ACCENT = "accent";
+    static final String ACCENT = "accent";            // solid colour, or the gradient's start
+    static final String ACCENT_END = "accent_end";
+    static final String ACCENT_GRADIENT = "accent_gradient";
+    static final String ACCENT_DIRECTION = "accent_direction";
     static final String SHOW_CLOCK = "show_clock";
     static final String SHOW_DATE = "show_date";
     static final String SHOW_SECONDS = "show_seconds";
@@ -93,8 +96,25 @@ final class Prefs {
     int dockOpacity() { return sp.getInt(DOCK_OPACITY, 35); }
     void setDockOpacity(int v) { sp.edit().putInt(DOCK_OPACITY, clamp(v, 0, 100)).apply(); }
 
-    int accent() { return sp.getInt(ACCENT, ACCENTS[0]); }
-    void setAccent(int color) { sp.edit().putInt(ACCENT, color).apply(); }
+    /** The accent as a single colour: the solid colour, or a gradient's midpoint. */
+    int accent() { return accentStyle().solid(); }
+
+    /** The full accent, gradient included. */
+    Accent accentStyle() {
+        int start = sp.getInt(ACCENT, ACCENTS[0]);
+        return new Accent(start, sp.getInt(ACCENT_END, start),
+                sp.getBoolean(ACCENT_GRADIENT, false), sp.getInt(ACCENT_DIRECTION, Accent.DIAGONAL));
+    }
+
+    /** A single accent colour (turns a gradient off). */
+    void setAccent(int color) {
+        sp.edit().putInt(ACCENT, color).putBoolean(ACCENT_GRADIENT, false).apply();
+    }
+
+    void setAccentGradient(int start, int end, int direction) {
+        sp.edit().putInt(ACCENT, start).putInt(ACCENT_END, end)
+                .putInt(ACCENT_DIRECTION, direction).putBoolean(ACCENT_GRADIENT, true).apply();
+    }
 
     boolean showClock() { return sp.getBoolean(SHOW_CLOCK, true); }
     void setShowClock(boolean v) { sp.edit().putBoolean(SHOW_CLOCK, v).apply(); }
@@ -147,7 +167,7 @@ final class Prefs {
     /** Applies the label settings to one label. */
     void styleLabel(android.widget.TextView t) {
         t.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, labelSp());
-        t.setTextColor(labelAccent() ? accent() : 0xFFE6F0FF);
+        if (labelAccent()) accentStyle().paint(t); else Accent.plain(t, 0xFFE6F0FF);
         if (labelShadow()) t.setShadowLayer(4f, 0f, 1f, 0xCC000000); else t.setShadowLayer(0f, 0f, 0f, 0);
         t.setMaxLines(labelTwoLines() ? 2 : 1);
     }
@@ -308,7 +328,11 @@ final class Prefs {
         JSONObject o = new JSONObject();
         o.put(DRAWER_OPACITY, drawerOpacity());
         o.put(DOCK_OPACITY, dockOpacity());
-        o.put(ACCENT, String.format("#%08X", accent()));
+        Accent a = accentStyle();
+        o.put(ACCENT, String.format("#%08X", a.start));
+        o.put(ACCENT_END, String.format("#%08X", a.end));
+        o.put(ACCENT_GRADIENT, a.gradient);
+        o.put(ACCENT_DIRECTION, a.direction);
         o.put(SHOW_CLOCK, showClock());
         o.put(SHOW_DATE, showDate());
         o.put(SHOW_SECONDS, showSeconds());
@@ -353,12 +377,14 @@ final class Prefs {
                 case DRAWER_OPACITY: case DOCK_OPACITY: case COLUMNS: case ROWS: case PAGES:
                 case DOCK_SLOTS: case DRAWER_COLUMNS: case ICON_SIZE:
                 case DOCK_ICON_SIZE: case DRAWER_ICON_SIZE: case LABEL_SIZE: case DEFAULT_PAGE: case DOCK_PAGES:
+                case ACCENT_DIRECTION:
                     e.putInt(k, o.getInt(k));
                     break;
                 case SHOW_CLOCK: case SHOW_DATE: case SHOW_SECONDS: case SHOW_DOCK: case HOME_LABELS:
                 case DRAWER_LABELS: case HIDDEN_SEARCHABLE:
                 case LABEL_ACCENT: case LABEL_SHADOW: case LABEL_TWO_LINES: case LOCK_LAYOUT:
                 case SCROLL_WALLPAPER: case ALLOW_ROTATION: case AZ_SCROLLER: case MOST_USED:
+                case ACCENT_GRADIENT:
                     e.putBoolean(k, o.getBoolean(k));
                     break;
                 case CLOCK_FORMAT:
@@ -366,6 +392,7 @@ final class Prefs {
                     if (f.equals(CLOCK_SYSTEM) || f.equals(CLOCK_12) || f.equals(CLOCK_24)) e.putString(k, f);
                     break;
                 case ACCENT:
+                case ACCENT_END:
                     e.putInt(k, Color.parseColor(o.getString(k)));
                     break;
                 case HIDDEN: {

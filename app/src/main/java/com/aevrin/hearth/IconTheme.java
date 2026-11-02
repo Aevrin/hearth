@@ -55,21 +55,21 @@ final class IconTheme {
 
     final String style;
     final String shape;
-    final int accent;
+    final Accent accent;
     private final Map<String, String> overrides;
     /** Changes whenever anything that affects rendering changes; used to drop the cache. */
     final String signature;
 
-    IconTheme(String style, String shape, int accent, Map<String, String> overrides) {
+    IconTheme(String style, String shape, Accent accent, Map<String, String> overrides) {
         this.style = style;
         this.shape = shape;
         this.accent = accent;
         this.overrides = overrides == null ? Collections.emptyMap() : overrides;
-        this.signature = style + "|" + shape + "|" + accent + "|" + new java.util.TreeMap<>(this.overrides);
+        this.signature = style + "|" + shape + "|" + accent.signature() + "|" + new java.util.TreeMap<>(this.overrides);
     }
 
     static IconTheme from(Prefs p) {
-        return new IconTheme(p.iconStyle(), p.iconShape(), p.accent(), p.iconOverrides());
+        return new IconTheme(p.iconStyle(), p.iconShape(), p.accentStyle(), p.iconOverrides());
     }
 
     String styleFor(String key) {
@@ -119,15 +119,18 @@ final class IconTheme {
         Canvas c = new Canvas(bmp);
         fillPlate(c, PLATE);
         Drawable mono = raw instanceof AdaptiveIconDrawable ? ((AdaptiveIconDrawable) raw).getMonochrome() : null;
+        Bitmap glyph;
         if (mono != null) {
+            glyph = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888);
             Drawable m = mono.mutate();
-            m.setTint(accent);
-            drawLayer(c, m);
+            m.setTint(accent.start);
+            drawLayer(new Canvas(glyph), m);
         } else {
-            Bitmap glyph = silhouette(raw);
-            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-            c.drawBitmap(glyph, 0, 0, p);
+            glyph = silhouette(raw);
         }
+        colourise(glyph);
+        c.drawBitmap(glyph, 0, 0, new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG));
+        glyph.recycle();
         mask(bmp);
         return bmp;
     }
@@ -140,10 +143,12 @@ final class IconTheme {
             int a = Color.alpha(px[i]);
             if (a == 0) continue;
             float l = (0.2126f * Color.red(px[i]) + 0.7152f * Color.green(px[i]) + 0.0722f * Color.blue(px[i])) / 255f;
+            int x = i % SIZE, y = i / SIZE;
+            int hi = accent.at(accent.position(x, y, SIZE, SIZE)); // the gradient runs across the icon
             px[i] = Color.argb(a,
-                    lerp(Color.red(DUO_DARK), Color.red(accent), l),
-                    lerp(Color.green(DUO_DARK), Color.green(accent), l),
-                    lerp(Color.blue(DUO_DARK), Color.blue(accent), l));
+                    lerp(Color.red(DUO_DARK), Color.red(hi), l),
+                    lerp(Color.green(DUO_DARK), Color.green(hi), l),
+                    lerp(Color.blue(DUO_DARK), Color.blue(hi), l));
         }
         src.setPixels(px, 0, SIZE, 0, 0, SIZE, SIZE);
         return src;
@@ -310,10 +315,19 @@ final class IconTheme {
             boolean on;
             if (hasPlate) on = a > 128 && distance(v, plateColor) > 70;
             else on = a > 96;
-            px[i] = on ? (accent & 0x00FFFFFF) | (Math.min(255, a) << 24) : 0;
+            px[i] = on ? (accent.start & 0x00FFFFFF) | (Math.min(255, a) << 24) : 0;
         }
         src.setPixels(px, 0, SIZE, 0, 0, SIZE, SIZE);
         return src;
+    }
+
+    /** Recolours a glyph's opaque parts with the accent gradient, keeping its alpha. */
+    private void colourise(Bitmap glyph) {
+        if (!accent.gradient) return; // already drawn in the solid colour
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setShader(accent.shader(0, 0, SIZE, SIZE, 255));
+        p.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
+        new Canvas(glyph).drawRect(0, 0, SIZE, SIZE, p);
     }
 
     private static int distance(int a, int b) {

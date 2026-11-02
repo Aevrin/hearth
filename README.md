@@ -10,7 +10,7 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 - Free software under the [GNU GPL v3 or later](LICENSE).
 - Android 13+.
 
-## Status: 0.5 (editing, shortcuts, polish)
+## Status: 0.6 (gradient accent, settings pages)
 
 | Phase | Scope | State |
 |---|---|---|
@@ -18,7 +18,8 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 | 2 | Dock, clock, theming, default-home prompt | Done |
 | 3 | Configuration: grid, pages, icons, labels, renaming, hidden apps, clock, backup | Done (gestures later) |
 | 4 | Generated icon themes, per-app icon styles, folders | Done |
-| 0.5 | App shortcuts, drag from drawer, smarter drops, page management, label styling | **In testing** |
+| 0.5 | App shortcuts, drag from drawer, smarter drops, page management, label styling | Done |
+| 0.6 | Gradient accent colour, Settings split into pages | **In testing** |
 | 4b | Notification dots, icon packs (maybe) | Planned |
 | 5 | Widgets | Planned |
 
@@ -53,20 +54,24 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     App info, Uninstall). Keep holding and move your finger instead to pick it up and drop it on
     the home screen, dock or a folder.
   - Swipe down at the top of the list, Back, or Home closes it.
-- **Settings** (long-press empty home space → Hearth settings):
-  - **Home app:** whether Hearth is the default, with a button to make it so.
-  - **Appearance:** accent colour (presets or any colour), drawer and dock opacity, and separate
-    icon sizes for the home screen, dock and drawer.
+- **Settings** (long-press empty home space → Hearth settings): a main list of categories, each
+  opening its own page. The main page also shows whether Hearth is the default home app.
+  - **Appearance:** accent as a **solid colour** (presets or any colour) or a **gradient** (presets,
+    or pick start and end, swap them, choose diagonal / horizontal / vertical). The clock, headings,
+    accent labels, themed and duotone icons, page dots and drop highlights use the full gradient;
+    single-colour things like switches use the midpoint. Drawer and dock background opacity.
   - **Labels:** on/off for home and drawer, size, accent colour, shadow, two lines.
   - **Icons:** generated on the phone from each app's own icon, with a live preview.
     Styles: Original, Themed, Duotone, Grayscale, Letters. Shapes: phone default, circle,
-    squircle, rounded square, square, teardrop. Per-app overrides via long-press → Change icon.
+    squircle, rounded square, square, teardrop. Home icon size. Per-app overrides via long-press →
+    Change icon.
     Generated icons are cached on disk so they appear instantly after a restart.
   - **Clock:** show/hide, date, seconds, phone / 12-hour / 24-hour.
-  - **Layout:** home columns (3–8), rows (3–9), pages (1–7), dock on/off, slots (3–7) and pages
-    (1–3), drawer columns (3–7), lock home screen, scroll wallpaper, allow rotation. Shrinking
-    never deletes apps.
-  - **Apps:** hidden apps and whether search finds them; A–Z strip and Most used on/off.
+  - **Home screen:** columns (3–8), rows (3–9), pages (1–7), lock, scroll wallpaper, allow
+    rotation. Shrinking never deletes apps.
+  - **Dock:** on/off, slots (3–7), pages (1–3), icon size.
+  - **App drawer:** columns (3–7), icon size, A–Z strip, Most used, hidden apps and whether
+    search finds them.
   - **Backup:** save every setting plus the home layout to a JSON file, and restore it.
 - Renamed apps keep their new name everywhere, and search finds both names.
 - Work-profile apps are included, with the usual briefcase badge.

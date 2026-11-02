@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- View tag key: the layout listener that keeps an accent gradient sized to its text. -->
+    <item name="accent_listener" type="id" />
+</resources>

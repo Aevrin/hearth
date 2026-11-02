@@ -399,11 +399,12 @@ public class HomeActivity extends Activity
     }
 
     private void applyAppearance() {
-        int accent = prefs.accent();
+        Accent style = prefs.accentStyle();
+        int accent = style.solid();
         drawer.setBackgroundColor(Prefs.background(prefs.drawerOpacity()));
-        grid.setAccent(accent);
-        dock.setAccent(accent);
-        alpha.setAccent(accent);
+        grid.setAccent(style);
+        dock.setAccent(style);
+        alpha.setAccent(style);
 
         GradientDrawable dockBg = new GradientDrawable();
         dockBg.setColor(Prefs.background(prefs.dockOpacity()));
@@ -418,8 +419,8 @@ public class HomeActivity extends Activity
         boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
         clock.setVisibility(prefs.showClock() && !landscape ? View.VISIBLE : View.GONE); // no room sideways
         clockDate.setVisibility(prefs.showDate() ? View.VISIBLE : View.GONE);
-        clockTime.setTextColor(accent);
-        clockDate.setTextColor(accent);
+        style.paint(clockTime);
+        style.paint(clockDate);
         // TextClock ticks every second on its own once the format includes seconds.
         String sec = prefs.showSeconds() ? ":ss" : "";
         switch (prefs.clockFormat()) {
@@ -437,12 +438,12 @@ public class HomeActivity extends Activity
                 break;
         }
         clockTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, prefs.showSeconds() ? 52 : 64);
-        drawerList.setVerticalScrollbarThumbDrawable(roundedBar(accent));
+        drawerList.setVerticalScrollbarThumbDrawable(roundedBar(style));
     }
 
-    private GradientDrawable roundedBar(int color) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
+    private GradientDrawable roundedBar(Accent a) {
+        GradientDrawable d = a.drawable();
+        if (a.gradient) d.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM); // it's a vertical bar
         d.setCornerRadius(dp(2));
         d.setSize(Math.round(dp(4)), Math.round(dp(32)));
         return d;
@@ -526,7 +527,8 @@ public class HomeActivity extends Activity
             View dot = new View(this);
             GradientDrawable d = new GradientDrawable();
             d.setShape(GradientDrawable.OVAL);
-            d.setColor(i == current ? prefs.accent() : 0x80E6F0FF);
+            // With a gradient, the current dot takes its colour from its place along the row.
+            d.setColor(i == current ? prefs.accentStyle().at(count > 1 ? (float) i / (count - 1) : 0f) : 0x80E6F0FF);
             dot.setBackground(d);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
             lp.setMarginStart(gap);

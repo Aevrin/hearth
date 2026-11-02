@@ -39,6 +39,7 @@ public class CellLayout extends ViewGroup {
     private final Paint hlFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint hlStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF hlRect = new RectF();
+    private Accent accent = Accent.solid(0xFF06B6D4);
 
     public CellLayout(Context context) { super(context); init(); }
     public CellLayout(Context context, AttributeSet attrs) { super(context, attrs); init(); }
@@ -46,7 +47,7 @@ public class CellLayout extends ViewGroup {
     private void init() {
         hlStroke.setStyle(Paint.Style.STROKE);
         hlStroke.setStrokeWidth(3 * getResources().getDisplayMetrics().density);
-        setAccent(0xFF06B6D4);
+        setAccent(accent);
     }
 
     void setGrid(int columns, int rows) {
@@ -55,10 +56,22 @@ public class CellLayout extends ViewGroup {
         requestLayout();
     }
 
-    void setAccent(int color) {
-        hlFill.setColor(Color.argb(56, Color.red(color), Color.green(color), Color.blue(color)));
-        hlStroke.setColor(color);
+    // A gradient spans the whole grid, so each highlighted cell shows its own slice of it.
+    void setAccent(Accent a) {
+        accent = a;
+        int c = a.solid();
+        hlFill.setColor(Color.argb(56, Color.red(c), Color.green(c), Color.blue(c)));
+        hlStroke.setColor(c);
+        int w = getWidth(), h = getHeight();
+        hlFill.setShader(w > 0 ? a.shader(0, 0, w, h, 56) : null);
+        hlStroke.setShader(w > 0 ? a.shader(0, 0, w, h, 255) : null);
         invalidate();
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int ow, int oh) {
+        super.onSizeChanged(w, h, ow, oh);
+        setAccent(accent);
     }
 
     int cellWidth() { return cellWidth; }

@@ -22,7 +22,7 @@ public class AlphaScroller extends View {
 
     private final List<String> letters = new ArrayList<>();
     private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private int accent = 0xFF06B6D4;
+    private Accent accent = Accent.solid(0xFF06B6D4);
     private int active = -1;
     private Consumer<String> listener;
 
@@ -41,8 +41,8 @@ public class AlphaScroller extends View {
         invalidate();
     }
 
-    void setAccent(int color) {
-        accent = color;
+    void setAccent(Accent a) {
+        accent = a;
         invalidate();
     }
 
@@ -59,7 +59,8 @@ public class AlphaScroller extends View {
         Paint.FontMetrics fm = text.getFontMetrics();
         for (int i = 0; i < letters.size(); i++) {
             if (i % every != 0 && i != active) continue;
-            text.setColor(i == active ? accent : 0xB3E6F0FF);
+            float t = letters.size() > 1 ? (float) i / (letters.size() - 1) : 0f;
+            text.setColor(i == active ? accent.at(t) : 0xB3E6F0FF);
             text.setFakeBoldText(i == active);
             float y = getPaddingTop() + slot * i + slot / 2f - (fm.ascent + fm.descent) / 2f;
             c.drawText(letters.get(i), getWidth() / 2f, y, text);

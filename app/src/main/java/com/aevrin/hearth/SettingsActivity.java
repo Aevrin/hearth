@@ -20,6 +20,8 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.widget.Button;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -49,14 +51,23 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     private static final int REQ_EXPORT = 11;
     private static final int REQ_IMPORT = 12;
 
+    // Pages. MAIN lists the others.
+    private static final int MAIN = 0, APPEARANCE = 1, ICONS = 2, LABELS = 3, CLOCK = 4,
+            HOME = 5, DOCK = 6, DRAWER = 7, BACKUP = 8;
+
     private Prefs prefs;
     private AppRepository repo;
     private LinearLayout content;
     private ScrollView scroll;
+    private TextView title;
     private TextView homeStatus;
     private Button homeButton;
     private Button hiddenButton;
     private LinearLayout preview;
+    private int page = MAIN;
+    private int mainScroll;
+    private boolean backRegistered;
+    private final OnBackInvokedCallback backToMain = () -> showPage(MAIN);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,7 +81,8 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             v.setPadding(i.left, i.top, i.right, i.bottom);
             return WindowInsets.CONSUMED;
         });
-        findViewById(R.id.back).setOnClickListener(v -> finish());
+        findViewById(R.id.back).setOnClickListener(v -> { if (page != MAIN) showPage(MAIN); else finish(); });
+        title = findViewById(R.id.settings_title);
         content = findViewById(R.id.settings_content);
         scroll = (ScrollView) content.getParent();
 
@@ -81,7 +93,14 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             return c != null ? c : e.label;
         });
         repo.reload();
-        build();
+        if (savedInstanceState != null) page = savedInstanceState.getInt("page", MAIN);
+        showPage(page);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putInt("page", page);
     }
 
     @Override
@@ -105,47 +124,105 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         }
     }
 
-    /** (Re)builds every row; used again when the accent colour changes. */
+    /** Opens a page from the top (returning to the main list keeps its place). */
+    private void showPage(int p) {
+        if (page == MAIN && p != MAIN) mainScroll = scroll.getScrollY();
+        page = p;
+        // Back (gesture or button) goes up to the main list from a sub-page.
+        if (p != MAIN && !backRegistered) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, backToMain);
+            backRegistered = true;
+        } else if (p == MAIN && backRegistered) {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backToMain);
+            backRegistered = false;
+        }
+        build();
+        int y = p == MAIN ? mainScroll : 0;
+        scroll.post(() -> scroll.scrollTo(0, y));
+    }
+
+    /** (Re)builds the current page; used again when the accent colour changes. */
     private void build() {
         int scrollY = scroll.getScrollY();
         content.removeAllViews();
+        homeStatus = null;
+        hiddenButton = null;
+        preview = null;
+        title.setText(page == MAIN ? R.string.settings : pageTitle(page));
+        switch (page) {
+            case APPEARANCE: buildAppearance(); break;
+            case ICONS: buildIcons(); break;
+            case LABELS: buildLabels(); break;
+            case CLOCK: buildClock(); break;
+            case HOME: buildHome(); break;
+            case DOCK: buildDock(); break;
+            case DRAWER: buildDrawer(); break;
+            case BACKUP: buildBackup(); break;
+            default: buildMain(); break;
+        }
+        scroll.post(() -> scroll.scrollTo(0, scrollY));
+    }
 
-        // Home app
+    private static int pageTitle(int p) {
+        switch (p) {
+            case APPEARANCE: return R.string.section_appearance;
+            case ICONS: return R.string.section_icons;
+            case LABELS: return R.string.section_labels;
+            case CLOCK: return R.string.section_clock;
+            case HOME: return R.string.section_home_screen;
+            case DOCK: return R.string.section_dock;
+            case DRAWER: return R.string.section_drawer;
+            case BACKUP: return R.string.section_backup;
+            default: return R.string.settings;
+        }
+    }
+
+    private void buildMain() {
         header(R.string.section_home);
         homeStatus = text("");
         homeButton = button(R.string.set_as_home, v -> DefaultHome.request(this));
         refreshHomeStatus();
 
-        // Appearance
-        header(R.string.section_appearance);
-        label(R.string.accent_colour);
-        swatches();
+        header(R.string.section_settings);
+        category(APPEARANCE, R.string.summary_appearance);
+        category(ICONS, R.string.summary_icons);
+        category(LABELS, R.string.summary_labels);
+        category(CLOCK, R.string.summary_clock);
+        category(HOME, R.string.summary_home_screen);
+        category(DOCK, R.string.summary_dock);
+        category(DRAWER, R.string.summary_drawer);
+        category(BACKUP, R.string.summary_backup);
+
+        header(R.string.section_about);
+        TextView about = text(getString(R.string.about));
+        about.setBackgroundResource(android.R.drawable.list_selector_background);
+        about.setPadding(0, dp(12), 0, dp(12));
+        about.setOnClickListener(v -> showAbout());
+    }
+
+    private void buildAppearance() {
+        header(R.string.accent_colour);
+        Accent a = prefs.accentStyle();
+        choice(R.string.accent_mode, new int[] {R.string.accent_solid, R.string.accent_gradient},
+                a.gradient ? 1 : 0, i -> {
+                    if ((i == 1) == prefs.accentStyle().gradient) return;
+                    if (i == 0) prefs.setAccent(prefs.accentStyle().start);
+                    else startGradient();
+                    accentChanged();
+                });
+        if (a.gradient) gradientControls(a); else swatches();
+        header(R.string.section_backgrounds);
         slider(R.string.drawer_opacity, prefs.drawerOpacity(), prefs::setDrawerOpacity);
         slider(R.string.dock_opacity, prefs.dockOpacity(), prefs::setDockOpacity);
-        choice(R.string.icon_size, new int[] {R.string.small, R.string.medium, R.string.large},
-                prefs.iconSize(), prefs::setIconSize);
-        choice(R.string.dock_icon_size, new int[] {R.string.small, R.string.medium, R.string.large},
-                prefs.dockIconSize(), prefs::setDockIconSize);
-        choice(R.string.drawer_icon_size, new int[] {R.string.small, R.string.medium, R.string.large},
-                prefs.drawerIconSize(), prefs::setDrawerIconSize);
+    }
 
-        // Labels
-        header(R.string.section_labels);
-        toggle(R.string.home_labels, prefs.homeLabels(), prefs::setHomeLabels);
-        toggle(R.string.drawer_labels, prefs.drawerLabels(), prefs::setDrawerLabels);
-        choice(R.string.label_size, new int[] {R.string.small, R.string.medium, R.string.large},
-                prefs.labelSize(), prefs::setLabelSize);
-        toggle(R.string.label_accent, prefs.labelAccent(), prefs::setLabelAccent);
-        toggle(R.string.label_shadow, prefs.labelShadow(), prefs::setLabelShadow);
-        toggle(R.string.label_two_lines, prefs.labelTwoLines(), prefs::setLabelTwoLines);
-
-        // Icons
-        header(R.string.section_icons);
+    private void buildIcons() {
         preview = new LinearLayout(this);
         preview.setOrientation(LinearLayout.HORIZONTAL);
         preview.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams plp = matchWrap();
-        plp.topMargin = dp(12);
+        plp.topMargin = dp(20);
         content.addView(preview, plp);
         refreshPreview();
         String[] styles = IconTheme.STYLES;
@@ -162,10 +239,20 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         int shapeIdx = 0;
         for (int i = 0; i < shapes.length; i++) if (shapes[i].equals(prefs.iconShape())) shapeIdx = i;
         choice(R.string.icon_shape, shapeNames, shapeIdx, i -> { prefs.setIconShape(shapes[i]); themeChanged(); });
+        choice(R.string.icon_size, sizes(), prefs.iconSize(), prefs::setIconSize);
         note(R.string.icon_note);
+    }
 
-        // Clock
-        header(R.string.section_clock);
+    private void buildLabels() {
+        toggle(R.string.home_labels, prefs.homeLabels(), prefs::setHomeLabels);
+        toggle(R.string.drawer_labels, prefs.drawerLabels(), prefs::setDrawerLabels);
+        choice(R.string.label_size, sizes(), prefs.labelSize(), prefs::setLabelSize);
+        toggle(R.string.label_accent, prefs.labelAccent(), prefs::setLabelAccent);
+        toggle(R.string.label_shadow, prefs.labelShadow(), prefs::setLabelShadow);
+        toggle(R.string.label_two_lines, prefs.labelTwoLines(), prefs::setLabelTwoLines);
+    }
+
+    private void buildClock() {
         toggle(R.string.show_clock, prefs.showClock(), prefs::setShowClock);
         toggle(R.string.show_date, prefs.showDate(), prefs::setShowDate);
         toggle(R.string.show_seconds, prefs.showSeconds(), prefs::setShowSeconds);
@@ -174,35 +261,43 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         for (int i = 0; i < formats.length; i++) if (formats[i].equals(prefs.clockFormat())) fmt = i;
         choice(R.string.clock_format, new int[] {R.string.clock_system, R.string.clock_12, R.string.clock_24},
                 fmt, i -> prefs.setClockFormat(formats[i]));
+    }
 
-        // Layout
-        header(R.string.section_layout);
+    private void buildHome() {
         stepper(R.string.home_columns, prefs.columns(), 3, 8, prefs::setColumns);
         stepper(R.string.home_rows, prefs.rows(), 3, 9, prefs::setRows);
         stepper(R.string.home_pages, prefs.pages(), 1, 7, prefs::setPages);
-        toggle(R.string.show_dock, prefs.showDock(), prefs::setShowDock);
-        stepper(R.string.dock_slots, prefs.dockSlots(), 3, 7, prefs::setDockSlots);
-        stepper(R.string.dock_pages, prefs.dockPages(), 1, 3, prefs::setDockPages);
-        stepper(R.string.drawer_columns, prefs.drawerColumns(), 3, 7, prefs::setDrawerColumns);
         toggle(R.string.lock_layout_setting, prefs.lockLayout(), prefs::setLockLayout);
         toggle(R.string.scroll_wallpaper, prefs.scrollWallpaper(), prefs::setScrollWallpaper);
         toggle(R.string.allow_rotation, prefs.allowRotation(), prefs::setAllowRotation);
         note(R.string.layout_note);
+    }
 
-        // Apps
+    private void buildDock() {
+        toggle(R.string.show_dock, prefs.showDock(), prefs::setShowDock);
+        stepper(R.string.dock_slots, prefs.dockSlots(), 3, 7, prefs::setDockSlots);
+        stepper(R.string.dock_pages, prefs.dockPages(), 1, 3, prefs::setDockPages);
+        choice(R.string.dock_icon_size, sizes(), prefs.dockIconSize(), prefs::setDockIconSize);
+    }
+
+    private void buildDrawer() {
+        stepper(R.string.drawer_columns, prefs.drawerColumns(), 3, 7, prefs::setDrawerColumns);
+        choice(R.string.drawer_icon_size, sizes(), prefs.drawerIconSize(), prefs::setDrawerIconSize);
+        toggle(R.string.az_scroller, prefs.azScroller(), prefs::setAzScroller);
+        toggle(R.string.most_used_setting, prefs.mostUsed(), prefs::setMostUsed);
         header(R.string.section_apps);
         hiddenButton = button(R.string.hidden_apps_loading, v -> showHiddenApps());
         if (repo.isLoaded()) onAppsChanged(); else hiddenButton.setEnabled(false);
         toggle(R.string.hidden_searchable, prefs.hiddenSearchable(), prefs::setHiddenSearchable);
-        toggle(R.string.az_scroller, prefs.azScroller(), prefs::setAzScroller);
-        toggle(R.string.most_used_setting, prefs.mostUsed(), prefs::setMostUsed);
+    }
 
-        // Backup
-        header(R.string.section_backup);
+    private void buildBackup() {
         note(R.string.backup_note);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        content.addView(row);
+        LinearLayout.LayoutParams rlp = matchWrap();
+        rlp.topMargin = dp(12);
+        content.addView(row, rlp);
         Button export = makeButton(R.string.backup_export, v -> startExport());
         Button restore = makeButton(R.string.backup_restore, v -> startImport());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -210,15 +305,162 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         lp.setMarginEnd(dp(12));
         row.addView(export, lp);
         row.addView(restore);
+    }
 
-        // About
-        header(R.string.section_about);
-        TextView about = text(getString(R.string.about));
-        about.setBackgroundResource(android.R.drawable.list_selector_background);
-        about.setPadding(0, dp(12), 0, dp(12));
-        about.setOnClickListener(v -> showAbout());
+    private static int[] sizes() {
+        return new int[] {R.string.small, R.string.medium, R.string.large};
+    }
 
-        scroll.post(() -> scroll.scrollTo(0, scrollY));
+    /** A row on the main page that opens a sub-page. */
+    private void category(int target, int summary) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(60));
+        row.setBackgroundResource(android.R.drawable.list_selector_background);
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        TextView t = new TextView(this);
+        t.setText(pageTitle(target));
+        t.setTextColor(getColor(R.color.text_primary));
+        t.setTextSize(17);
+        TextView sub = new TextView(this);
+        sub.setText(summary);
+        sub.setTextColor(getColor(R.color.text_muted));
+        sub.setTextSize(13);
+        texts.addView(t);
+        texts.addView(sub);
+        row.addView(texts, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView chevron = new TextView(this);
+        chevron.setText("›");
+        chevron.setTextSize(26);
+        prefs.accentStyle().paint(chevron);
+        row.addView(chevron);
+        row.setOnClickListener(v -> showPage(target));
+        LinearLayout.LayoutParams lp = matchWrap();
+        lp.topMargin = dp(4);
+        content.addView(row, lp);
+    }
+
+    /* ---------- accent ---------- */
+
+    /** Accent changed: re-render icons and re-tint this page. */
+    private void accentChanged() {
+        repo.setTheme(IconTheme.from(prefs)); // themed/duotone icons use the accent
+        build();
+    }
+
+    // Turning a gradient on: keep the current colour as the start and pick a partner.
+    private void startGradient() {
+        Accent a = prefs.accentStyle();
+        int end = a.end != a.start ? a.end : partnerFor(a.start);
+        prefs.setAccentGradient(a.start, end, a.direction);
+    }
+
+    private static int partnerFor(int color) {
+        for (int[] p : Accent.PRESETS) {
+            if (p[0] == color) return p[1];
+            if (p[1] == color) return p[0];
+        }
+        return color == 0xFF06B6D4 ? 0xFF3D52A0 : 0xFF06B6D4;
+    }
+
+    private void gradientControls(Accent a) {
+        // A wide preview bar of the current gradient.
+        View bar = new View(this);
+        GradientDrawable d = a.drawable();
+        d.setCornerRadius(dp(12));
+        bar.setBackground(d);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        blp.topMargin = dp(12);
+        content.addView(bar, blp);
+
+        // Presets.
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout strip = new LinearLayout(this);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        strip.setPadding(0, dp(12), 0, dp(4));
+        hs.addView(strip);
+        for (int[] p : Accent.PRESETS) {
+            View v = new View(this);
+            GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[] {p[0], p[1]});
+            g.setShape(GradientDrawable.OVAL);
+            if (p[0] == a.start && p[1] == a.end) g.setStroke(dp(4), 0xFFE6F0FF);
+            v.setBackground(g);
+            v.setContentDescription(String.format("#%06X to #%06X", p[0] & 0xFFFFFF, p[1] & 0xFFFFFF));
+            v.setOnClickListener(x -> {
+                prefs.setAccentGradient(p[0], p[1], prefs.accentStyle().direction);
+                accentChanged();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(36), dp(36));
+            lp.setMarginEnd(dp(10));
+            strip.addView(v, lp);
+        }
+        content.addView(hs, matchWrap());
+
+        // Start / end pickers and swap.
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams rlp = matchWrap();
+        rlp.topMargin = dp(8);
+        content.addView(row, rlp);
+        row.addView(colourButton(R.string.gradient_start, a.start, () -> showColorPicker(prefs.accentStyle().start, c -> {
+            Accent cur = prefs.accentStyle();
+            prefs.setAccentGradient(c, cur.end, cur.direction);
+            accentChanged();
+        })));
+        row.addView(colourButton(R.string.gradient_end, a.end, () -> showColorPicker(prefs.accentStyle().end, c -> {
+            Accent cur = prefs.accentStyle();
+            prefs.setAccentGradient(cur.start, c, cur.direction);
+            accentChanged();
+        })));
+        TextView swap = new TextView(this);
+        swap.setText(R.string.gradient_swap);
+        swap.setTextSize(15);
+        swap.setTextColor(a.solid());
+        swap.setPadding(dp(12), dp(12), dp(12), dp(12));
+        swap.setBackgroundResource(android.R.drawable.list_selector_background);
+        swap.setOnClickListener(x -> {
+            Accent cur = prefs.accentStyle();
+            prefs.setAccentGradient(cur.end, cur.start, cur.direction);
+            accentChanged();
+        });
+        row.addView(swap);
+
+        choice(R.string.gradient_direction,
+                new int[] {R.string.direction_diagonal, R.string.direction_horizontal, R.string.direction_vertical},
+                a.direction, i -> {
+                    Accent cur = prefs.accentStyle();
+                    prefs.setAccentGradient(cur.start, cur.end, i);
+                    accentChanged();
+                });
+        note(R.string.gradient_note);
+    }
+
+    /** "● Start" — a dot of the colour and a label; tap to change it. */
+    private View colourButton(int label, int color, Runnable onClick) {
+        LinearLayout b = new LinearLayout(this);
+        b.setOrientation(LinearLayout.HORIZONTAL);
+        b.setGravity(Gravity.CENTER_VERTICAL);
+        b.setPadding(dp(4), dp(8), dp(16), dp(8));
+        b.setBackgroundResource(android.R.drawable.list_selector_background);
+        View dot = new View(this);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(color);
+        g.setStroke(dp(1), 0x66E6F0FF);
+        dot.setBackground(g);
+        b.addView(dot, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextColor(getColor(R.color.text_primary));
+        t.setTextSize(15);
+        t.setPadding(dp(8), 0, 0, 0);
+        b.addView(t);
+        b.setOnClickListener(v -> onClick.run());
+        return b;
     }
 
     private void refreshHomeStatus() {
@@ -237,7 +479,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     private void header(int text) {
         TextView t = new TextView(this);
         t.setText(text);
-        t.setTextColor(prefs.accent());
+        prefs.accentStyle().paint(t);
         t.setTextSize(14);
         t.setTypeface(t.getTypeface(), android.graphics.Typeface.BOLD);
         LinearLayout.LayoutParams lp = matchWrap();
@@ -429,7 +671,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         strip.setPadding(0, dp(8), 0, dp(4));
         hs.addView(strip);
         int size = dp(36);
-        int current = prefs.accent();
+        int current = prefs.accentStyle().start;
         for (int color : Prefs.ACCENTS) {
             View v = new View(this);
             GradientDrawable d = new GradientDrawable();
@@ -440,8 +682,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             v.setContentDescription(String.format("#%06X", color & 0xFFFFFF));
             v.setOnClickListener(x -> {
                 prefs.setAccent(color);
-                repo.setTheme(IconTheme.from(prefs)); // themed/duotone icons use the accent
-                build(); // re-tint everything on this screen
+                accentChanged();
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
             lp.setMarginEnd(dp(10));
@@ -458,15 +699,18 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         if (custom) rainbow.setStroke(dp(4), 0xFFE6F0FF);
         pick.setBackground(rainbow);
         pick.setContentDescription(getString(R.string.custom_colour));
-        pick.setOnClickListener(x -> showColorPicker());
+        pick.setOnClickListener(x -> showColorPicker(prefs.accentStyle().start, c -> {
+            prefs.setAccent(c);
+            accentChanged();
+        }));
         strip.addView(pick, new LinearLayout.LayoutParams(size, size));
         content.addView(hs, matchWrap());
     }
 
     /** Hue / saturation / brightness sliders plus a hex field, with a live swatch. */
-    private void showColorPicker() {
+    private void showColorPicker(int initial, IntConsumer onSave) {
         float[] hsv = new float[3];
-        Color.colorToHSV(prefs.accent(), hsv);
+        Color.colorToHSV(initial, hsv);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(24), dp(12), dp(24), 0);
@@ -495,7 +739,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         hueTrack.setSize(1, dp(8));
         hue.setProgressDrawable(hueTrack);
 
-        int[] color = {prefs.accent()};
+        int[] color = {initial};
         boolean[] syncing = {false};
         Runnable fromSliders = () -> {
             color[0] = Color.HSVToColor(new float[] {hue.getProgress(), sat.getProgress() / 100f, val.getProgress() / 100f});
@@ -535,11 +779,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         new AlertDialog.Builder(this)
                 .setTitle(R.string.custom_colour)
                 .setView(box)
-                .setPositiveButton(R.string.save, (d, w) -> {
-                    prefs.setAccent(color[0] | 0xFF000000);
-                    repo.setTheme(IconTheme.from(prefs));
-                    build();
-                })
+                .setPositiveButton(R.string.save, (d, w) -> onSave.accept(color[0] | 0xFF000000))
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
@@ -633,7 +873,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
                 Backup.restore(this, uri);
                 repo.setTheme(IconTheme.from(prefs));
                 Toast.makeText(this, R.string.backup_restored, Toast.LENGTH_SHORT).show();
-                build(); // show the restored values
+                showPage(MAIN); // show the restored values
             }
         } catch (Exception e) {
             Toast.makeText(this, getString(R.string.backup_failed, e.getMessage()), Toast.LENGTH_LONG).show();
