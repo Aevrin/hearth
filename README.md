@@ -113,7 +113,8 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     squircle, rounded square, square, teardrop. Home icon size. Per-app overrides via long-press →
     Change icon.
     Generated icons are cached on disk so they appear instantly after a restart.
-  - **Clock:** show/hide, date, seconds, phone / 12-hour / 24-hour.
+  - **Clock:** show/hide, date, seconds, phone / 12-hour / 24-hour, and optional **next alarm** and
+    **battery level** under the date (both read from the system with no permission).
   - **Home screen:** columns (3–8), rows (3–9), pages (1–7), **subgrid positioning**, lock, scroll
     wallpaper, allow rotation. Shrinking never deletes apps.
     **Folder spacing** slider with a live preview of an open folder.
@@ -122,8 +123,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
       no longer slide aside on the subgrid: drop on free space to move, or on the middle of an icon
       to make a folder. Turning it on or off converts your layout in place.
   - **Dock:** on/off, slots (3–7), pages (1–3), icon size.
-  - **App drawer:** columns (3–7), icon size, A–Z strip, Most used, hidden apps and whether
-    search finds them.
+  - **App drawer:** columns (3–7), icon size, **sort** (A–Z, most used, recently installed), an
+    optional **dot on newly installed apps** until you open them, A–Z strip, Most used, hidden
+    apps and whether search finds them.
   - **Backup:** save every setting plus the home layout to a JSON file, and restore it.
 - Renamed apps keep their new name everywhere, and search finds both names.
 - Work-profile apps are included, with the usual briefcase badge.
@@ -163,6 +165,12 @@ Release builds need an upload key: copy `signing.properties.example` to
 The GitHub Actions workflow builds a signed bundle on every push to `main` and publishes it
 to a Google Play internal testing track (maintainer only). Forks without the secrets will
 fail at the signing step; that's expected.
+
+## Tests
+
+The layout engine (placing, sliding, widgets, folders, pages, the subgrid, and never losing
+anything when the grid shrinks) has unit tests in `app/src/test`. CI runs them before every
+release build: `gradle :app:testDebugUnitTest`.
 
 ## Contributing
 

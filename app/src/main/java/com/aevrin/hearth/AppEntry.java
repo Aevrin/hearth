@@ -17,6 +17,8 @@ final class AppEntry {
     final String label;
     /** Stable across restarts: component plus the profile's serial number. */
     final String key;
+    /** When the app was first installed (ms), for "new" dots and sorting. */
+    final long installTime;
 
     AppEntry(LauncherActivityInfo info, long userSerial) {
         this.info = info;
@@ -25,6 +27,7 @@ final class AppEntry {
         CharSequence l = info.getLabel();
         this.label = l == null ? component.getPackageName() : l.toString();
         this.key = keyFor(component, userSerial);
+        this.installTime = info.getFirstInstallTime();
     }
 
     static String keyFor(ComponentName component, long userSerial) {

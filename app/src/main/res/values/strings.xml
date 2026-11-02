@@ -284,4 +284,16 @@
     <string name="section_folders">Folders</string>
     <string name="preview_loading">Loading apps…</string>
     <string name="folder_spacing">Space between apps in a folder</string>
+
+    <!-- Clock extras, drawer sorting -->
+    <string name="show_next_alarm">Show next alarm</string>
+    <string name="show_battery">Show battery level</string>
+    <string name="next_alarm_description">Next alarm %1$s</string>
+    <string name="battery_level">Battery %1$d percent</string>
+    <string name="battery_charging">Battery %1$d percent, charging</string>
+    <string name="drawer_sort">Sort apps</string>
+    <string name="sort_az">A–Z</string>
+    <string name="sort_most_used">Most used</string>
+    <string name="sort_recent">Recently installed</string>
+    <string name="new_dots">Dot on newly installed apps (until opened)</string>
 </resources>

@@ -38,9 +38,9 @@ jobs:
         with:
           gradle-version: "9.8.2"
 
-      # Unsigned debug build: proves the update compiles without needing any secrets.
-      - name: Build
-        run: gradle --no-daemon :app:assembleDebug
+      # Unsigned debug build plus the layout tests: proves the update works without any secrets.
+      - name: Build and test
+        run: gradle --no-daemon :app:assembleDebug :app:testDebugUnitTest
 
   merge:
     needs: build

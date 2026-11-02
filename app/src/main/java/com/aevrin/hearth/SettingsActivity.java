@@ -270,6 +270,8 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         toggle(R.string.show_clock, prefs.showClock(), prefs::setShowClock);
         toggle(R.string.show_date, prefs.showDate(), prefs::setShowDate);
         toggle(R.string.show_seconds, prefs.showSeconds(), prefs::setShowSeconds);
+        toggle(R.string.show_next_alarm, prefs.showNextAlarm(), prefs::setShowNextAlarm);
+        toggle(R.string.show_battery, prefs.showBattery(), prefs::setShowBattery);
         String[] formats = {Prefs.CLOCK_SYSTEM, Prefs.CLOCK_12, Prefs.CLOCK_24};
         int fmt = 0;
         for (int i = 0; i < formats.length; i++) if (formats[i].equals(prefs.clockFormat())) fmt = i;
@@ -356,6 +358,9 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     private void buildDrawer() {
         stepper(R.string.drawer_columns, prefs.drawerColumns(), 3, 7, prefs::setDrawerColumns);
         choice(R.string.drawer_icon_size, sizes(), prefs.drawerIconSize(), prefs::setDrawerIconSize);
+        choice(R.string.drawer_sort, new int[] {R.string.sort_az, R.string.sort_most_used, R.string.sort_recent},
+                prefs.drawerSort(), prefs::setDrawerSort);
+        toggle(R.string.new_dots, prefs.newDots(), prefs::setNewDots);
         choice(R.string.search_bar, new int[] {R.string.search_always, R.string.search_pull},
                 prefs.searchOnPull() ? 1 : 0, i -> prefs.setSearchOnPull(i == 1));
         toggle(R.string.az_scroller, prefs.azScroller(), prefs::setAzScroller);

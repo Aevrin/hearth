@@ -121,6 +121,17 @@ public class HomeActivity extends Activity
     private View clock;
     private TextClock clockTime;
     private TextClock clockDate;
+    private View clockStatus;
+    private TextView statusAlarm, statusBattery;
+    private Intent lastBattery;
+    // Next alarm and battery level, only listened for while the home screen is showing.
+    private final android.content.BroadcastReceiver statusReceiver = new android.content.BroadcastReceiver() {
+        @Override public void onReceive(android.content.Context c, Intent i) {
+            if (Intent.ACTION_BATTERY_CHANGED.equals(i.getAction())) lastBattery = i;
+            updateStatus();
+        }
+    };
+    private boolean statusRegistered;
     private CellLayout grid;
     private LinearLayout pageDots;
     private CellLayout dock;
@@ -197,6 +208,9 @@ public class HomeActivity extends Activity
         clock = findViewById(R.id.clock);
         clockTime = findViewById(R.id.clock_time);
         clockDate = findViewById(R.id.clock_date);
+        clockStatus = findViewById(R.id.clock_status);
+        statusAlarm = findViewById(R.id.status_alarm);
+        statusBattery = findViewById(R.id.status_battery);
         grid = findViewById(R.id.grid);
         pageDots = findViewById(R.id.page_dots);
         dock = findViewById(R.id.dock);
@@ -326,6 +340,7 @@ public class HomeActivity extends Activity
     @Override
     protected void onStart() {
         super.onStart();
+        registerStatus();
         wallpaper.addOnColorsChangedListener(wallpaperColors, handler);
         try {
             widgetHost.startListening(); // widgets update while Hearth is visible
@@ -343,6 +358,10 @@ public class HomeActivity extends Activity
 
     @Override
     protected void onStop() {
+        if (statusRegistered) {
+            unregisterReceiver(statusReceiver);
+            statusRegistered = false;
+        }
         wallpaper.removeOnColorsChangedListener(wallpaperColors);
         try {
             widgetHost.stopListening();
@@ -490,6 +509,7 @@ public class HomeActivity extends Activity
         AppEntry app = repo.find(key);
         if (app == null) return;
         prefs.recordLaunch(key);
+        prefs.markSeen(app);
         repo.launch(app, from);
     }
 
@@ -578,6 +598,12 @@ public class HomeActivity extends Activity
         }
         clockTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, prefs.showSeconds() ? 52 : 64);
         drawerList.setVerticalScrollbarThumbDrawable(roundedBar(style));
+        statusAlarm.setCompoundDrawableTintList(ColorStateList.valueOf(accent));
+        statusBattery.setCompoundDrawableTintList(ColorStateList.valueOf(accent));
+        style.paint(statusAlarm);
+        style.paint(statusBattery);
+        registerStatus();
+        updateStatus();
         applySystemBars();
         // "Text in accent colour" reaches the search box and the empty-screen hint too.
         int text = getColor(R.color.text_primary);
@@ -632,7 +658,7 @@ public class HomeActivity extends Activity
     }
 
     private void refreshAlpha() {
-        boolean show = prefs.azScroller() && !adapter.isSearching();
+        boolean show = prefs.azScroller() && !adapter.isSearching() && prefs.drawerSort() == Prefs.SORT_AZ;
         alpha.setVisibility(show ? View.VISIBLE : View.GONE);
         if (show) alpha.setLetters(adapter.letters());
     }
@@ -840,6 +866,70 @@ public class HomeActivity extends Activity
         } catch (Exception | LinkageError e) {
             Toast.makeText(this, R.string.gesture_shade_failed, Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /* ---------- next alarm and battery ---------- */
+
+    // Both broadcasts come from the system with no permission; nothing is
+    // registered unless one of the two is switched on.
+    private void registerStatus() {
+        boolean want = prefs.showNextAlarm() || prefs.showBattery();
+        if (want && !statusRegistered) {
+            android.content.IntentFilter f = new android.content.IntentFilter();
+            f.addAction(Intent.ACTION_BATTERY_CHANGED);
+            f.addAction(android.app.AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED);
+            f.addAction(Intent.ACTION_TIME_CHANGED);
+            f.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+            lastBattery = registerReceiver(statusReceiver, f, RECEIVER_NOT_EXPORTED); // battery is sticky
+            statusRegistered = true;
+        } else if (!want && statusRegistered) {
+            unregisterReceiver(statusReceiver);
+            statusRegistered = false;
+        }
+    }
+
+    private void updateStatus() {
+        boolean alarm = prefs.showNextAlarm() && updateAlarm();
+        boolean battery = prefs.showBattery() && updateBattery();
+        statusAlarm.setVisibility(alarm ? View.VISIBLE : View.GONE);
+        statusBattery.setVisibility(battery ? View.VISIBLE : View.GONE);
+        ((LinearLayout.LayoutParams) statusBattery.getLayoutParams()).setMarginStart(alarm ? Math.round(dp(14)) : 0);
+        clockStatus.setVisibility(alarm || battery ? View.VISIBLE : View.GONE);
+    }
+
+    /** "6:30" today or tomorrow morning, "Tue 6:30" further off. False when no alarm is set. */
+    private boolean updateAlarm() {
+        android.app.AlarmManager.AlarmClockInfo next = getSystemService(android.app.AlarmManager.class).getNextAlarmClock();
+        if (next == null) return false;
+        boolean h24;
+        switch (prefs.clockFormat()) {
+            case Prefs.CLOCK_12: h24 = false; break;
+            case Prefs.CLOCK_24: h24 = true; break;
+            default: h24 = android.text.format.DateFormat.is24HourFormat(this); break;
+        }
+        boolean soon = next.getTriggerTime() - System.currentTimeMillis() < 20L * 60 * 60 * 1000;
+        String skeleton = (soon ? "" : "EEE") + (h24 ? "Hm" : "hma");
+        String pattern = android.text.format.DateFormat.getBestDateTimePattern(java.util.Locale.getDefault(), skeleton);
+        statusAlarm.setText(android.text.format.DateFormat.format(pattern, next.getTriggerTime()));
+        statusAlarm.setContentDescription(getString(R.string.next_alarm_description, statusAlarm.getText()));
+        return true;
+    }
+
+    private boolean updateBattery() {
+        Intent b = lastBattery;
+        if (b == null) return false;
+        int level = b.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+        int scale = b.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100);
+        if (level < 0 || scale <= 0) return false;
+        int status = b.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1);
+        boolean charging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING
+                || status == android.os.BatteryManager.BATTERY_STATUS_FULL;
+        int pct = Math.round(level * 100f / scale);
+        statusBattery.setText(getString(R.string.percent, pct));
+        statusBattery.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                charging ? R.drawable.ic_status_charging : R.drawable.ic_status_battery, 0, 0, 0);
+        statusBattery.setContentDescription(getString(charging ? R.string.battery_charging : R.string.battery_level, pct));
+        return true;
     }
 
     private void openClockApp() {
@@ -2248,6 +2338,8 @@ public class HomeActivity extends Activity
         homeContent.animate().alpha(0f).setDuration(180)
                 .withEndAction(() -> { if (drawerOpen) homeContent.setVisibility(View.INVISIBLE); })
                 .start();
+        adapter.applyPrefs(drawerIconPx, prefs.drawerColumns()); // most-used order and "new" dots move on
+        refreshAlpha();
         drawerList.scrollToPosition(0);
         search.setVisibility(prefs.searchOnPull() ? View.GONE : View.VISIBLE);
         applySystemBars();

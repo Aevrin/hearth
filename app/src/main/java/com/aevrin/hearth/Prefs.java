@@ -100,6 +100,14 @@ final class Prefs {
     static final String SIDEBAR_HANDLE_SHOWN = "sidebar_handle_shown";
     static final String SIDEBAR_ZONE = "sidebar_zone";
     static final String FOLDER_SPACING = "folder_spacing";
+    static final String SHOW_NEXT_ALARM = "show_next_alarm";
+    static final String SHOW_BATTERY = "show_battery";
+    static final String NEW_DOTS = "new_dots";
+    static final String SEEN_NEW = "seen_new"; // not backed up
+    static final String DRAWER_SORT = "drawer_sort";
+    static final int SORT_AZ = 0, SORT_MOST_USED = 1, SORT_RECENT = 2;
+    /** How long a newly installed app keeps its dot (unless opened sooner). */
+    static final long NEW_FOR_MS = 3L * 24 * 60 * 60 * 1000;
     /** Swipe-in zone widths, in dp: narrow, wide, ultra wide. */
     static final int[] ZONE_WIDTHS = {24, 48, 72};
     static final int HANDLE_TOP = 0, HANDLE_MIDDLE = 1, HANDLE_BOTTOM = 2;
@@ -263,6 +271,47 @@ final class Prefs {
     int sidebarHandlePos() { return clamp(sp.getInt(SIDEBAR_HANDLE_POS, HANDLE_MIDDLE), HANDLE_TOP, HANDLE_BOTTOM); }
     void setSidebarHandlePos(int v) { sp.edit().putInt(SIDEBAR_HANDLE_POS, v).apply(); }
     boolean sidebarHandleShown() { return sp.getBoolean(SIDEBAR_HANDLE_SHOWN, true); }
+    boolean showNextAlarm() { return sp.getBoolean(SHOW_NEXT_ALARM, false); }
+    void setShowNextAlarm(boolean v) { sp.edit().putBoolean(SHOW_NEXT_ALARM, v).apply(); }
+    boolean showBattery() { return sp.getBoolean(SHOW_BATTERY, false); }
+    void setShowBattery(boolean v) { sp.edit().putBoolean(SHOW_BATTERY, v).apply(); }
+    boolean newDots() { return sp.getBoolean(NEW_DOTS, false); }
+    void setNewDots(boolean v) { sp.edit().putBoolean(NEW_DOTS, v).apply(); }
+    int drawerSort() { return clamp(sp.getInt(DRAWER_SORT, SORT_AZ), SORT_AZ, SORT_RECENT); }
+    void setDrawerSort(int v) { sp.edit().putInt(DRAWER_SORT, v).apply(); }
+
+    /** Installed in the last few days and not opened from Hearth since. */
+    boolean isNew(AppEntry e) {
+        if (!newDots() || System.currentTimeMillis() - e.installTime > NEW_FOR_MS) return false;
+        return !sp.getStringSet(SEEN_NEW, Collections.emptySet()).contains(e.key + "@" + e.installTime);
+    }
+
+    /** Opened: no more "new" dot. Only recent installs are remembered, so the list stays short. */
+    void markSeen(AppEntry e) {
+        if (System.currentTimeMillis() - e.installTime > NEW_FOR_MS) return;
+        Set<String> seen = new HashSet<>();
+        long cutoff = System.currentTimeMillis() - NEW_FOR_MS;
+        for (String s : sp.getStringSet(SEEN_NEW, Collections.emptySet())) {
+            int at = s.lastIndexOf('@');
+            try {
+                if (at > 0 && Long.parseLong(s.substring(at + 1)) >= cutoff) seen.add(s);
+            } catch (NumberFormatException ignored) { }
+        }
+        seen.add(e.key + "@" + e.installTime);
+        sp.edit().putStringSet(SEEN_NEW, seen).apply();
+    }
+
+    /** Launch counts for every app opened from Hearth, read once. */
+    java.util.Map<String, Integer> launchCounts() {
+        JSONObject o = jsonPref(LAUNCH_COUNTS);
+        java.util.Map<String, Integer> m = new java.util.HashMap<>();
+        for (Iterator<String> it = o.keys(); it.hasNext(); ) {
+            String k = it.next();
+            m.put(k, o.optInt(k, 0));
+        }
+        return m;
+    }
+
     /** 0–100: space between apps in an open folder (30 matches the original spacing). */
     int folderSpacing() { return clamp(sp.getInt(FOLDER_SPACING, 30), 0, 100); }
     void setFolderSpacing(int v) { sp.edit().putInt(FOLDER_SPACING, clamp(v, 0, 100)).apply(); }
@@ -503,6 +552,10 @@ final class Prefs {
         o.put(SIDEBAR_HANDLE_SHOWN, sidebarHandleShown());
         o.put(SIDEBAR_ZONE, sidebarZone());
         o.put(FOLDER_SPACING, folderSpacing());
+        o.put(SHOW_NEXT_ALARM, showNextAlarm());
+        o.put(SHOW_BATTERY, showBattery());
+        o.put(NEW_DOTS, newDots());
+        o.put(DRAWER_SORT, drawerSort());
         o.put(SIDEBAR_LEFT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_LEFT)));
         for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) {
             o.put(side + BG_MODE, sidebarBgMode(side));
@@ -531,7 +584,7 @@ final class Prefs {
                 case DOCK_SLOTS: case DRAWER_COLUMNS: case ICON_SIZE:
                 case DOCK_ICON_SIZE: case DRAWER_ICON_SIZE: case LABEL_SIZE: case DEFAULT_PAGE: case DOCK_PAGES:
                 case ACCENT_DIRECTION: case STATUS_ICONS: case NAV_ICONS: case SIDEBAR_HANDLE_POS: case SIDEBAR_ZONE:
-                case FOLDER_SPACING:
+                case FOLDER_SPACING: case DRAWER_SORT:
                     e.putInt(k, o.getInt(k));
                     break;
                 case SHOW_CLOCK: case SHOW_DATE: case SHOW_SECONDS: case SHOW_DOCK: case HOME_LABELS:
@@ -540,6 +593,7 @@ final class Prefs {
                 case SCROLL_WALLPAPER: case ALLOW_ROTATION: case AZ_SCROLLER: case MOST_USED:
                 case ACCENT_GRADIENT: case SUBGRID: case SEARCH_ON_PULL:
                 case SIDEBAR_LEFT: case SIDEBAR_RIGHT: case SIDEBAR_HANDLE_SHOWN:
+                case SHOW_NEXT_ALARM: case SHOW_BATTERY: case NEW_DOTS:
                     e.putBoolean(k, o.getBoolean(k));
                     break;
                 case SIDEBAR_LEFT_ITEMS: case SIDEBAR_RIGHT_ITEMS: {

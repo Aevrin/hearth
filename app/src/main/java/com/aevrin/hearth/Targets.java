@@ -99,6 +99,7 @@ final class Targets {
         if (app == null) return missing(a);
         if (spec.startsWith(APP)) {
             prefs.recordLaunch(app.key);
+            prefs.markSeen(app);
             repo.launch(app, from);
             return true;
         }

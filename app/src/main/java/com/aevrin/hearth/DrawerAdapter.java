@@ -74,7 +74,22 @@ final class DrawerAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         List<AppEntry> sorted = new ArrayList<>(apps);
         Collator collator = Collator.getInstance();
         collator.setStrength(Collator.PRIMARY);
-        sorted.sort((a, b) -> collator.compare(labelOf(a), labelOf(b)));
+        java.util.Comparator<AppEntry> az = (a, b) -> collator.compare(labelOf(a), labelOf(b));
+        switch (prefs.drawerSort()) {
+            case Prefs.SORT_MOST_USED: {
+                java.util.Map<String, Integer> counts = prefs.launchCounts();
+                sorted.sort(((java.util.Comparator<AppEntry>) (a, b) -> Integer.compare(
+                        counts.getOrDefault(b.key, 0), counts.getOrDefault(a.key, 0))).thenComparing(az));
+                break;
+            }
+            case Prefs.SORT_RECENT:
+                sorted.sort(((java.util.Comparator<AppEntry>) (a, b) ->
+                        Long.compare(b.installTime, a.installTime)).thenComparing(az));
+                break;
+            default:
+                sorted.sort(az);
+                break;
+        }
         all = sorted;
         rebuild();
     }
@@ -110,6 +125,7 @@ final class DrawerAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
     /** First letters present in the full list, in order, for the A–Z strip. */
     List<String> letters() {
         List<String> out = new ArrayList<>();
+        if (prefs.drawerSort() != Prefs.SORT_AZ) return out; // letters only follow an A–Z list
         for (Object o : rows) {
             if (!(o instanceof AppEntry)) continue;
             String l = letterOf((AppEntry) o);
@@ -151,7 +167,8 @@ final class DrawerAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                     if (e != null && !hidden.contains(e.key)) top.add(e);
                 }
             }
-            if (!top.isEmpty() && visible.size() > columns * 2) {
+            // The "Most used" row only makes sense on top of an alphabetical list.
+            if (!top.isEmpty() && visible.size() > columns * 2 && prefs.drawerSort() == Prefs.SORT_AZ) {
                 rows.add(mostUsedTitle);
                 rows.addAll(top);
                 rows.add(allTitle);
@@ -225,6 +242,17 @@ final class DrawerAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         }
         h.icon.setImageDrawable(null);
         repo.loadIcon(e, d -> { if (h.app == e) h.icon.setImageDrawable(d); });
+        // A small accent dot on apps installed in the last few days and not opened yet.
+        h.icon.getOverlay().clear();
+        if (prefs.isNew(e)) {
+            int size = Math.max(1, iconPx > 0 ? iconPx / 5 : 18), px = iconPx > 0 ? iconPx : 96;
+            android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+            dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            dot.setColor(prefs.accent());
+            dot.setStroke(Math.max(1, size / 6), 0xFF0F1A2A);
+            dot.setBounds(px - size, 0, px, size);
+            h.icon.getOverlay().add(dot);
+        }
         h.itemView.setOnClickListener(v -> actions.onAppClick(e, v));
         h.itemView.setOnLongClickListener(v -> { actions.onAppLongClick(e, v); return true; });
     }

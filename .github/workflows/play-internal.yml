@@ -53,6 +53,10 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: echo "version_code=$(( RUN_NUMBER + ${VERSION_CODE_OFFSET:-0} ))" >> "$GITHUB_OUTPUT"
 
+      # The layout engine's tests: a failure stops the release before anything is signed.
+      - name: Layout tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+
       - name: Restore upload keystore
         env:
           UPLOAD_KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_B64 }}

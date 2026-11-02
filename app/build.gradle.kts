@@ -54,11 +54,21 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // Layout-engine tests run on the build machine's JVM. Android framework calls
+    // (only logging, in HomeLayout) are stubbed out; org.json comes from the real library.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
     // The only dependency: the app drawer's scrolling grid. Apache-2.0, F-Droid friendly.
     implementation("androidx.recyclerview:recyclerview:1.4.0")
+
+    // Tests only; nothing here ships in the app.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
 
 // An unsigned bundle is useless to Play; fail early with a clear message instead.

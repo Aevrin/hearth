@@ -53,6 +53,42 @@
                     android:shadowRadius="6"
                     android:textColor="@color/aquamarine"
                     android:textSize="16sp" />
+
+                <!-- Optional: next alarm and battery level. -->
+                <LinearLayout
+                    android:id="@+id/clock_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/status_alarm"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:drawablePadding="4dp"
+                        android:drawableStart="@drawable/ic_status_alarm"
+                        android:gravity="center_vertical"
+                        android:shadowColor="#99000000"
+                        android:shadowRadius="6"
+                        android:textSize="14sp"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/status_battery"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:drawablePadding="2dp"
+                        android:drawableStart="@drawable/ic_status_battery"
+                        android:gravity="center_vertical"
+                        android:shadowColor="#99000000"
+                        android:shadowRadius="6"
+                        android:textSize="14sp"
+                        android:visibility="gone" />
+                </LinearLayout>
             </LinearLayout>
 
             <com.aevrin.hearth.CellLayout
