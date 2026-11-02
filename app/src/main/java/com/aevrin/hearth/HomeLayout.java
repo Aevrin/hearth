@@ -26,6 +26,12 @@ import java.util.Set;
  * What sits where: home pages, dock pages and folders. Saved as readable JSON
  * in the app's private storage (files/home.json).
  *
+ * Home pages can run at double resolution ("subgrid"): every home cell is split
+ * 2×2, icons and folders cover 2×2 of those fine cells, and anything can sit at
+ * half-cell offsets. All home coordinates and sizes here are in fine cells;
+ * {@link #columns()} and {@link #rows()} are the fine-cell counts. The dock is
+ * always a plain row.
+ *
  * Keys are app keys, "folder:<id>" or "shortcut:<...>" (see Shortcuts). Nothing
  * is ever dropped when the grid shrinks: an item that no longer fits moves to the
  * nearest free cell, and if there is none it keeps its old position, hidden,
@@ -34,9 +40,9 @@ import java.util.Set;
 final class HomeLayout {
 
     private static final String TAG = "HomeLayout";
-    // v1 home only · v2 +container · v3 +page · v4 +folders · v5 dock pages · v6 widget spans.
-    // Older files load as-is.
-    private static final int VERSION = 6;
+    // v1 home only · v2 +container · v3 +page · v4 +folders · v5 dock pages · v6 widget spans
+    // · v7 subgrid. Older files load as-is.
+    private static final int VERSION = 7;
 
     static final String HOME = "home";
     static final String DOCK = "dock";
@@ -70,7 +76,8 @@ final class HomeLayout {
     }
 
     private final File file;
-    private int columns, rows, pages, dockSlots, dockPages;
+    private int columns, rows, pages, dockSlots, dockPages; // home columns/rows in fine cells
+    private int sub = 1; // 1 normal, 2 subgrid
     private final List<Item> items = new ArrayList<>();
     private final Map<String, Folder> folders = new LinkedHashMap<>();
 
@@ -84,16 +91,19 @@ final class HomeLayout {
 
     /** Loads with the dimensions currently set in Prefs. */
     static HomeLayout load(File dir, Prefs p) {
-        return load(dir, p.columns(), p.rows(), p.pages(), p.dockSlots(), p.dockPages());
+        return load(dir, p.columns(), p.rows(), p.pages(), p.dockSlots(), p.dockPages(), p.subgrid() ? 2 : 1);
     }
 
-    static HomeLayout load(File dir, int columns, int rows, int pages, int dockSlots, int dockPages) {
+    /** Columns and rows are the home grid's normal (coarse) size. */
+    static HomeLayout load(File dir, int columns, int rows, int pages, int dockSlots, int dockPages, int sub) {
         HomeLayout layout = new HomeLayout(fileIn(dir));
-        layout.columns = columns;
-        layout.rows = rows;
+        layout.sub = sub == 2 ? 2 : 1;
+        layout.columns = columns * layout.sub;
+        layout.rows = rows * layout.sub;
         layout.pages = pages;
         layout.dockSlots = dockSlots;
         layout.dockPages = dockPages;
+        boolean converted = false;
         if (layout.file.isFile()) {
             try {
                 String text = new String(Files.readAllBytes(layout.file.toPath()), StandardCharsets.UTF_8);
@@ -108,6 +118,7 @@ final class HomeLayout {
                         if (!folder.apps.isEmpty()) layout.folders.put(folder.id, folder);
                     }
                 }
+                int fileSub = root.optInt("subgrid", 1) == 2 ? 2 : 1;
                 JSONArray arr = root.getJSONArray("items");
                 for (int i = 0; i < arr.length(); i++) {
                     JSONObject o = arr.getJSONObject(i);
@@ -119,8 +130,15 @@ final class HomeLayout {
                         it.container = HOME; // widgets live on home pages only
                         it.spanX = Math.max(1, o.optInt("w", 1));
                         it.spanY = Math.max(1, o.optInt("h", 1));
+                    } else if (HOME.equals(c)) {
+                        it.spanX = it.spanY = fileSub;
                     }
                     layout.items.add(it);
+                }
+                // Saved at the other resolution (subgrid was just switched): convert.
+                if (fileSub != layout.sub) {
+                    layout.convert(fileSub, layout.sub);
+                    converted = true;
                 }
                 // Folders nothing points at are leftovers; drop them.
                 Set<String> used = new HashSet<>();
@@ -130,8 +148,41 @@ final class HomeLayout {
                 Log.w(TAG, "home.json unreadable, starting empty", e);
             }
         }
-        if (layout.reflow()) layout.save();
+        if (layout.reflow() || converted) layout.save();
         return layout;
+    }
+
+    /** Scales home positions and sizes between normal (1) and subgrid (2) units. */
+    private void convert(int from, int to) {
+        for (Item it : items) {
+            if (!HOME.equals(it.container)) continue;
+            if (to > from) {
+                it.x *= 2;
+                it.y *= 2;
+                it.spanX *= 2;
+                it.spanY *= 2;
+            } else {
+                it.x /= 2;
+                it.y /= 2;
+                it.spanX = isWidgetKey(it.key) ? Math.max(1, (it.spanX + 1) / 2) : 1;
+                it.spanY = isWidgetKey(it.key) ? Math.max(1, (it.spanY + 1) / 2) : 1;
+            }
+        }
+        // Anything that now overlaps is moved by reflow().
+    }
+
+    /** 2 when home is on the subgrid, else 1. */
+    int sub() { return sub; }
+
+    /** How many cells an icon or folder covers in each direction, in this container. */
+    int iconSpan(String container) {
+        return HOME.equals(container) ? sub : 1;
+    }
+
+    private Item newItem(String key, String container, int page, int x, int y) {
+        Item it = new Item(key, container, page, x, y);
+        it.spanX = it.spanY = iconSpan(container);
+        return it;
     }
 
     int columns() { return columns; }
@@ -160,9 +211,13 @@ final class HomeLayout {
 
     /** Whether an item, with its span, fits entirely on the grid at (x, y). */
     boolean fitsItem(Item it, String container, int page, int x, int y) {
-        if (it.spanX == 1 && it.spanY == 1) return fits(container, page, x, y);
-        return HOME.equals(container) && fits(container, page, x, y)
-                && x + it.spanX <= columns && y + it.spanY <= rows;
+        return fitsArea(container, page, x, y, it.spanX, it.spanY);
+    }
+
+    /** Whether a w×h area at (x, y) is entirely on the grid. */
+    boolean fitsArea(String container, int page, int x, int y, int w, int h) {
+        if (DOCK.equals(container)) return w == 1 && h == 1 && fits(container, page, x, y);
+        return fits(container, page, x, y) && x + w <= columns && y + h <= rows;
     }
 
     /** True when no item other than `ignore` covers any of the w×h cells at (x, y). */
@@ -196,14 +251,17 @@ final class HomeLayout {
         return s;
     }
 
-    /** First free cell as {page, x, y}, trying the preferred page first; null when full. */
+    /**
+     * First free spot for an icon as {page, x, y}, trying the preferred page first;
+     * null when full. On the subgrid it keeps to whole cells, so icons line up.
+     */
     int[] firstFree(String container, int preferredPage) {
-        int n = pagesOf(container);
+        int n = pagesOf(container), span = iconSpan(container);
         for (int i = 0; i < n; i++) {
             int p = (Math.max(0, preferredPage) + i) % n;
-            for (int y = 0; y < rowsOf(container); y++) {
-                for (int x = 0; x < cols(container); x++) {
-                    if (at(container, p, x, y) == null) return new int[] {p, x, y};
+            for (int y = 0; y + span <= rowsOf(container); y += span) {
+                for (int x = 0; x + span <= cols(container); x += span) {
+                    if (areaFree(container, p, x, y, span, span, null)) return new int[] {p, x, y};
                 }
             }
         }
@@ -237,10 +295,17 @@ final class HomeLayout {
         return it;
     }
 
-    /** Changes a widget's size in place. Returns false if it wouldn't fit or the cells are taken. */
-    boolean resizeItem(Item it, int w, int h) {
-        if (w < 1 || h < 1 || it.x + w > columns || it.y + h > rows) return false;
-        if (!areaFree(it.container, it.page, it.x, it.y, w, h, it)) return false;
+    /** Whether a widget could take the area (x, y, w, h) on its page. */
+    boolean canResize(Item it, int x, int y, int w, int h) {
+        return w >= 1 && h >= 1 && fitsArea(it.container, it.page, x, y, w, h)
+                && areaFree(it.container, it.page, x, y, w, h, it);
+    }
+
+    /** Moves and resizes a widget to an area. Returns false (and changes nothing) if it doesn't fit. */
+    boolean resizeItemTo(Item it, int x, int y, int w, int h) {
+        if (!canResize(it, x, y, w, h)) return false;
+        it.x = x;
+        it.y = y;
         it.spanX = w;
         it.spanY = h;
         save();
@@ -263,15 +328,16 @@ final class HomeLayout {
     boolean add(String key, String container, int preferredPage) {
         int[] cell = firstFree(container, preferredPage);
         if (cell == null) return false;
-        items.add(new Item(key, container, cell[0], cell[1], cell[2]));
+        items.add(newItem(key, container, cell[0], cell[1], cell[2]));
         save();
         return true;
     }
 
-    /** Puts a new key at a specific free cell (drag from the drawer). */
+    /** Puts a new key at a specific free spot (drag from the drawer); (x, y) is its top-left. */
     void addAt(String key, String container, int page, int x, int y) {
-        if (!fits(container, page, x, y) || at(container, page, x, y) != null) return;
-        items.add(new Item(key, container, page, x, y));
+        int span = iconSpan(container);
+        if (!fitsArea(container, page, x, y, span, span) || !areaFree(container, page, x, y, span, span, null)) return;
+        items.add(newItem(key, container, page, x, y));
         save();
     }
 
@@ -280,13 +346,14 @@ final class HomeLayout {
      * single taken cell, the two swap. A widget only moves into free cells.
      */
     void move(Item item, String container, int page, int x, int y) {
-        if (!fitsItem(item, container, page, x, y)) return;
-        if (item.spanX > 1 || item.spanY > 1) {
-            if (!areaFree(container, page, x, y, item.spanX, item.spanY, item)) return;
-            item.container = container;
-            item.page = page;
-            item.x = x;
-            item.y = y;
+        // Icons take the target container's icon size; widgets keep theirs.
+        boolean widget = isWidgetKey(item.key);
+        if (widget && DOCK.equals(container)) return;
+        int w = widget ? item.spanX : iconSpan(container), h = widget ? item.spanY : iconSpan(container);
+        if (!fitsArea(container, page, x, y, w, h)) return;
+        if (w > 1 || h > 1) {
+            if (!areaFree(container, page, x, y, w, h, item)) return;
+            place(item, container, page, x, y, w, h);
             save();
             return;
         }
@@ -294,16 +361,21 @@ final class HomeLayout {
         if (other == item) return;
         if (other != null && (other.spanX > 1 || other.spanY > 1)) return; // can't swap with a widget
         if (other != null) {
-            other.container = item.container;
-            other.page = item.page;
-            other.x = item.x;
-            other.y = item.y;
+            // Swap: the other takes the dragged item's old spot (which fits it, being an icon's spot).
+            int span = iconSpan(item.container);
+            place(other, item.container, item.page, item.x, item.y, span, span);
         }
-        item.container = container;
-        item.page = page;
-        item.x = x;
-        item.y = y;
+        place(item, container, page, x, y, w, h);
         save();
+    }
+
+    private static void place(Item it, String container, int page, int x, int y, int w, int h) {
+        it.container = container;
+        it.page = page;
+        it.x = x;
+        it.y = y;
+        it.spanX = w;
+        it.spanY = h;
     }
 
     /**
@@ -314,6 +386,7 @@ final class HomeLayout {
      */
     boolean insertAt(Item dragged, String key, String container, int page, int x, int y) {
         if (!fits(container, page, x, y)) return false;
+        if (iconSpan(container) > 1) return false; // no sliding on the subgrid
         if (dragged != null && (dragged.spanX > 1 || dragged.spanY > 1)) return false;
         int cols = cols(container), rws = rowsOf(container), n = cols * rws;
         // Cells under widgets stay put; icons slide through the other cells only.
@@ -345,12 +418,9 @@ final class HomeLayout {
             for (int i = empty; i < t; i++) place(cell[seq.get(i + 1)], seq.get(i), cols);
         }
         if (dragged != null) {
-            dragged.container = container;
-            dragged.page = page;
-            dragged.x = x;
-            dragged.y = y;
+            place(dragged, container, page, x, y, 1, 1);
         } else {
-            items.add(new Item(key, container, page, x, y));
+            items.add(newItem(key, container, page, x, y));
         }
         save();
         return true;
@@ -461,7 +531,7 @@ final class HomeLayout {
         int[] cell = firstFree(HOME, HOME.equals(folderItem.container) ? folderItem.page : 0);
         if (cell == null) return false;
         f.apps.remove(key);
-        items.add(new Item(key, HOME, cell[0], cell[1], cell[2]));
+        items.add(newItem(key, HOME, cell[0], cell[1], cell[2]));
         if (f.apps.size() == 1) {
             folderItem.key = f.apps.get(0);
             folders.remove(f.id);
@@ -498,26 +568,13 @@ final class HomeLayout {
         for (int i = 1; i < f.apps.size(); i++) {
             int[] cell = firstFree(HOME, HOME.equals(folderItem.container) ? folderItem.page : 0);
             if (cell == null) { lost++; continue; }
-            items.add(new Item(f.apps.get(i), HOME, cell[0], cell[1], cell[2]));
+            items.add(newItem(f.apps.get(i), HOME, cell[0], cell[1], cell[2]));
         }
         save();
         return lost;
     }
 
-    /* ---------- resizing ---------- */
-
-    /** New grid dimensions: items that no longer fit are moved, never dropped. */
-    void resize(int columns, int rows, int pages, int dockSlots, int dockPages) {
-        if (columns == this.columns && rows == this.rows && pages == this.pages
-                && dockSlots == this.dockSlots && dockPages == this.dockPages) return;
-        this.columns = columns;
-        this.rows = rows;
-        this.pages = pages;
-        this.dockSlots = dockSlots;
-        this.dockPages = dockPages;
-        reflow();
-        save();
-    }
+    /* ---------- tidying ---------- */
 
     /**
      * Moves items that are off the grid, or sharing a cell, to free cells. Dock
@@ -536,7 +593,7 @@ final class HomeLayout {
             }
         }
         for (Item it : homeless) {
-            if (it.spanX > 1 || it.spanY > 1) {
+            if (isWidgetKey(it.key)) {
                 // A widget: shrink it to the grid if it's now bigger, then find room for it.
                 int w = Math.min(it.spanX, columns), h = Math.min(it.spanY, rows);
                 int[] a = freeAreaAmong(placed, Math.max(0, Math.min(it.page, pages - 1)), w, h);
@@ -554,14 +611,12 @@ final class HomeLayout {
             int[] cell = DOCK.equals(it.container) ? freeAmong(placed, DOCK, it.page) : null;
             String target = DOCK;
             if (cell == null) {
-                cell = freeAmong(placed, HOME, HOME.equals(it.container) ? Math.min(it.page, pages - 1) : 0);
+                cell = freeAmong(placed, HOME, HOME.equals(it.container) ? Math.max(0, Math.min(it.page, pages - 1)) : 0);
                 target = HOME;
             }
             if (cell == null) continue; // no room anywhere: keep it as-is, hidden, until there is
-            it.container = target;
-            it.page = cell[0];
-            it.x = cell[1];
-            it.y = cell[2];
+            int span = iconSpan(target);
+            place(it, target, cell[0], cell[1], cell[2], span, span);
             placed.add(it);
             moved = true;
         }
@@ -569,12 +624,20 @@ final class HomeLayout {
     }
 
     private int[] freeAmong(List<Item> placed, String container, int preferredPage) {
-        int n = pagesOf(container);
+        int n = pagesOf(container), span = iconSpan(container);
         for (int i = 0; i < n; i++) {
             int p = (Math.max(0, preferredPage) + i) % n;
-            for (int y = 0; y < rowsOf(container); y++) {
-                for (int x = 0; x < cols(container); x++) {
-                    if (!taken(placed, container, p, x, y, 1, 1)) return new int[] {p, x, y};
+            for (int y = 0; y + span <= rowsOf(container); y += span) {
+                for (int x = 0; x + span <= cols(container); x += span) {
+                    if (!taken(placed, container, p, x, y, span, span)) return new int[] {p, x, y};
+                }
+            }
+            // Nothing on whole cells: try half-cell spots too.
+            if (span > 1) {
+                for (int y = 0; y + span <= rowsOf(container); y++) {
+                    for (int x = 0; x + span <= cols(container); x++) {
+                        if (!taken(placed, container, p, x, y, span, span)) return new int[] {p, x, y};
+                    }
                 }
             }
         }
@@ -610,7 +673,7 @@ final class HomeLayout {
                     .put("page", it.page)
                     .put("x", it.x)
                     .put("y", it.y);
-            if (it.spanX > 1 || it.spanY > 1) o.put("w", it.spanX).put("h", it.spanY);
+            if (isWidgetKey(it.key)) o.put("w", it.spanX).put("h", it.spanY);
             arr.put(o);
         }
         JSONArray fs = new JSONArray();
@@ -619,8 +682,9 @@ final class HomeLayout {
         }
         return new JSONObject()
                 .put("version", VERSION)
-                .put("columns", columns)
-                .put("rows", rows)
+                .put("subgrid", sub)
+                .put("columns", columns / sub)
+                .put("rows", rows / sub)
                 .put("pages", pages)
                 .put("dock_slots", dockSlots)
                 .put("dock_pages", dockPages)

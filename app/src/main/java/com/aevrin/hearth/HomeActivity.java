@@ -89,6 +89,8 @@ public class HomeActivity extends Activity
     // A widget being added: waiting on the bind permission or its setup screen.
     private int pendingWidgetId = -1;
     private int pendingWidgetPage;
+    private ResizeFrame resizeFrame;   // non-null while a widget is being resized
+    private HomeLayout.Item resizing;
 
     private View homeContent;
     private View clock;
@@ -277,6 +279,12 @@ public class HomeActivity extends Activity
     }
 
     @Override
+    protected void onPause() {
+        endResize();
+        super.onPause();
+    }
+
+    @Override
     protected void onStop() {
         try {
             widgetHost.stopListening();
@@ -316,6 +324,7 @@ public class HomeActivity extends Activity
     @Override
     public void onConfigurationChanged(Configuration c) {
         super.onConfigurationChanged(c);
+        endResize(); // the grid's geometry is about to change
         applyAppearance();
         afterLayout(grid, this::refreshHome); // cells changed size
     }
@@ -324,7 +333,9 @@ public class HomeActivity extends Activity
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (folders.isOpen()) {
+        if (resizeFrame != null) {
+            endResize();
+        } else if (folders.isOpen()) {
             folders.close();
         } else if (drawerOpen) {
             closeDrawer();
@@ -340,7 +351,8 @@ public class HomeActivity extends Activity
             lastTouchY = ev.getRawY();
         }
         if (pendingDrag != null) trackPendingDrag(ev);
-        if (!folders.isOpen()) gestures.onTouchEvent(ev); // no page/drawer swipes over an open folder
+        // No page/drawer swipes over an open folder or while resizing a widget.
+        if (!folders.isOpen() && resizeFrame == null) gestures.onTouchEvent(ev);
         return super.dispatchTouchEvent(ev);
     }
 
@@ -424,6 +436,7 @@ public class HomeActivity extends Activity
     /* ---------- configuration ---------- */
 
     private void reloadConfig() {
+        endResize();
         layout = HomeLayout.load(getFilesDir(), prefs);
         if (currentPage >= layout.pages()) currentPage = layout.pages() - 1;
         if (currentDockPage >= layout.dockPages()) currentDockPage = 0;
@@ -578,8 +591,8 @@ public class HomeActivity extends Activity
         dock.removeAllViews();
         boolean homeLabels = prefs.homeLabels();
         // In landscape (or with many rows) cells get small: shrink icons to fit.
-        int gridIcon = fitIcon(grid, homeIconPx, homeLabels);
-        int dockIcon = fitIcon(dock, dockIconPx, false);
+        int gridIcon = fitIcon(grid, homeIconPx, homeLabels, layout.iconSpan(HomeLayout.HOME));
+        int dockIcon = fitIcon(dock, dockIconPx, false, 1);
         for (HomeLayout.Item item : layout.items()) {
             if (!layout.fitsItem(item, item.container, item.page, item.x, item.y)) continue; // waiting for room
             boolean inDock = HomeLayout.DOCK.equals(item.container);
@@ -602,7 +615,7 @@ public class HomeActivity extends Activity
                 v.setOnClickListener(view -> launchKey(item.key, view));
             }
             v.setOnLongClickListener(view -> { onItemLongPress(item, view); return true; });
-            parent.addView(v, new CellLayout.LayoutParams(item.x, item.y));
+            parent.addView(v, new CellLayout.LayoutParams(item.x, item.y, item.spanX, item.spanY));
         }
         emptyHint.setVisibility(layout.isEmpty() ? View.VISIBLE : View.GONE);
         dots(pageDots, layout.pages(), currentPage, 7);
@@ -610,10 +623,12 @@ public class HomeActivity extends Activity
         if (dock.getVisibility() != View.VISIBLE) dockDots.setVisibility(View.GONE);
     }
 
-    private int fitIcon(CellLayout cl, int wanted, boolean label) {
+    // An icon covers `span` cells each way (2 on the subgrid).
+    private int fitIcon(CellLayout cl, int wanted, boolean label, int span) {
         if (cl.cellHeight() <= 0 || cl.cellWidth() <= 0) return wanted;
         int labelH = label ? Math.round(dp(prefs.labelTwoLines() ? 36 : 20)) : 0;
-        int room = Math.min(cl.cellWidth() - Math.round(dp(10)), cl.cellHeight() - labelH - Math.round(dp(14)));
+        int room = Math.min(cl.cellWidth() * span - Math.round(dp(10)),
+                cl.cellHeight() * span - labelH - Math.round(dp(14)));
         return Math.max(Math.round(dp(24)), Math.min(wanted, room));
     }
 
@@ -786,6 +801,22 @@ public class HomeActivity extends Activity
                     && layout.areaFree(container, page, tx, ty, st.item.spanX, st.item.spanY, st.item);
             return new int[] {ok ? CellLayout.HL_MOVE : CellLayout.HL_NONE, tx, ty, page};
         }
+        int span = layout.iconSpan(container);
+        if (span > 1) {
+            // Subgrid: the icon is centred on the finger, snapped to half cells. Dropped on the
+            // middle of another icon it makes a folder; otherwise it needs free space.
+            HomeLayout.Item under = layout.at(container, page, cell[0], cell[1]);
+            if (under != null && under != st.item && !isBig(under) && !HomeLayout.isFolderKey(st.key)
+                    && nearItemCentre(target, under, x, y)) {
+                return new int[] {CellLayout.HL_FOLDER, under.x, under.y, page};
+            }
+            int cw = Math.max(1, target.cellWidth()), ch = Math.max(1, target.cellHeight());
+            int tx = Math.max(0, Math.min(layout.columns() - span, Math.round((x - target.getPaddingLeft()) / cw - span / 2f)));
+            int ty = Math.max(0, Math.min(layout.rows() - span, Math.round((y - target.getPaddingTop()) / ch - span / 2f)));
+            boolean ok = layout.fitsArea(container, page, tx, ty, span, span)
+                    && layout.areaFree(container, page, tx, ty, span, span, st.item);
+            return new int[] {ok ? CellLayout.HL_MOVE : CellLayout.HL_NONE, tx, ty, page};
+        }
         HomeLayout.Item other = layout.at(container, page, cell[0], cell[1]);
         int mode;
         if (other != null && other != st.item && isBig(other)) mode = CellLayout.HL_NONE; // over a widget
@@ -807,7 +838,8 @@ public class HomeActivity extends Activity
                 if (target == grid) checkEdge(e.getX());
                 int[] plan = dropPlan(target, container, st, e.getX(), e.getY());
                 boolean big = st.item != null && isBig(st.item);
-                target.setHighlight(plan[1], plan[2], big ? st.item.spanX : 1, big ? st.item.spanY : 1, plan[0]);
+                int span = layout.iconSpan(container);
+                target.setHighlight(plan[1], plan[2], big ? st.item.spanX : span, big ? st.item.spanY : span, plan[0]);
                 return true;
             }
             case DragEvent.ACTION_DRAG_EXITED:
@@ -824,8 +856,6 @@ public class HomeActivity extends Activity
                     // nowhere to put it here: it goes back where it was
                 } else if (st.item != null && isBig(st.item)) {
                     layout.move(st.item, container, page, x, y);
-                } else if (st.item != null && other == st.item) {
-                    // put back where it was: nothing to do
                 } else if (plan[0] == CellLayout.HL_MOVE) {
                     if (st.item != null) layout.move(st.item, container, page, x, y);
                     else layout.addAt(st.key, container, page, x, y);
@@ -1071,8 +1101,17 @@ public class HomeActivity extends Activity
 
     /* ---------- widgets ---------- */
 
+    /** Widgets drag differently from icons: they keep their size and only drop into free space. */
     private static boolean isBig(HomeLayout.Item it) {
-        return it.spanX > 1 || it.spanY > 1;
+        return HomeLayout.isWidgetKey(it.key);
+    }
+
+    /** Whether a point is in the middle of an item's footprint (a folder drop rather than a move). */
+    private static boolean nearItemCentre(CellLayout t, HomeLayout.Item it, float x, float y) {
+        if (t.cellWidth() == 0 || t.cellHeight() == 0) return false;
+        float left = t.getPaddingLeft() + it.x * t.cellWidth(), top = t.getPaddingTop() + it.y * t.cellHeight();
+        float fx = (x - left) / (it.spanX * t.cellWidth()), fy = (y - top) / (it.spanY * t.cellHeight());
+        return fx > 0.22f && fx < 0.78f && fy > 0.12f && fy < 0.88f;
     }
 
     /** Removes anything from the home screen; a widget also gives up its widget id. */
@@ -1098,12 +1137,12 @@ public class HomeActivity extends Activity
 
     /** Cells a widget wants, from its own declared size. */
     private int spanX(AppWidgetProviderInfo info) {
-        if (info.targetCellWidth > 0) return Math.min(layout.columns(), info.targetCellWidth);
+        if (info.targetCellWidth > 0) return Math.min(layout.columns(), info.targetCellWidth * layout.sub());
         return cellsFor(info.minWidth, grid.cellWidth(), layout.columns());
     }
 
     private int spanY(AppWidgetProviderInfo info) {
-        if (info.targetCellHeight > 0) return Math.min(layout.rows(), info.targetCellHeight);
+        if (info.targetCellHeight > 0) return Math.min(layout.rows(), info.targetCellHeight * layout.sub());
         return cellsFor(info.minHeight, grid.cellHeight(), layout.rows());
     }
 
@@ -1260,8 +1299,12 @@ public class HomeActivity extends Activity
         return menu;
     }
 
-    /** Width and height steppers, limited by the widget's own minimums and the free space. */
+    /**
+     * Resize mode: a frame with handles around the widget; drag them, and it snaps
+     * to the grid (half cells on the subgrid). Tap outside, Back or Home to finish.
+     */
     private void resizeWidget(HomeLayout.Item item, AppWidgetProviderInfo info) {
+        endResize();
         boolean horiz = (info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0;
         boolean vert = (info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0;
         int minW = horiz ? cellsFor(Math.max(1, info.minResizeWidth), grid.cellWidth(), layout.columns()) : item.spanX;
@@ -1270,60 +1313,48 @@ public class HomeActivity extends Activity
                 ? cellsFor(info.maxResizeWidth, grid.cellWidth(), layout.columns()) : layout.columns()) : item.spanX;
         int maxH = vert ? (info.maxResizeHeight > 0
                 ? cellsFor(info.maxResizeHeight, grid.cellHeight(), layout.rows()) : layout.rows()) : item.spanY;
-        int[] size = {item.spanX, item.spanY};
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        int pad = Math.round(dp(24));
-        box.setPadding(pad, Math.round(dp(8)), pad, 0);
-        if (horiz) box.addView(sizeStepper(R.string.widget_width, size, 0, Math.min(minW, item.spanX), Math.max(maxW, item.spanX)));
-        if (vert) box.addView(sizeStepper(R.string.widget_height, size, 1, Math.min(minH, item.spanY), Math.max(maxH, item.spanY)));
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.widget_resize)
-                .setView(box)
-                .setPositiveButton(R.string.save, (d, w) -> {
-                    if (size[0] == item.spanX && size[1] == item.spanY) return;
-                    if (layout.resizeItem(item, size[0], size[1])) refreshHome();
-                    else Toast.makeText(this, R.string.widget_resize_no_room, Toast.LENGTH_LONG).show();
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+        resizing = item;
+        resizeFrame = new ResizeFrame(this, new ResizeFrame.Host() {
+            @Override public boolean canPlace(int x, int y, int w, int h) {
+                return layout.canResize(item, x, y, w, h);
+            }
+            @Override public boolean commit(int x, int y, int w, int h) {
+                if (!layout.resizeItemTo(item, x, y, w, h)) return false;
+                refreshHome();
+                return true;
+            }
+            @Override public void preview(int x, int y, int w, int h, boolean ok) {
+                if (x < 0) grid.clearHighlight();
+                else grid.setHighlight(x, y, w, h, ok ? CellLayout.HL_MOVE : CellLayout.HL_NONE);
+            }
+            @Override public void done() {
+                endResize();
+            }
+        });
+        resizeFrame.setAccent(prefs.accent());
+        int[] g = new int[2], r = new int[2];
+        View root = findViewById(R.id.root);
+        grid.getLocationInWindow(g);
+        root.getLocationInWindow(r);
+        resizeFrame.setGrid(g[0] - r[0] + grid.getPaddingLeft(), g[1] - r[1] + grid.getPaddingTop(),
+                grid.cellWidth(), grid.cellHeight(), layout.columns(), layout.rows());
+        resizeFrame.setWidget(item.x, item.y, item.spanX, item.spanY, minW, minH, maxW, maxH, horiz, vert);
+        ((ViewGroup) root).addView(resizeFrame, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_OVERLAY, endResizeOnBack);
+        Toast.makeText(this, R.string.widget_resize_hint, Toast.LENGTH_SHORT).show();
     }
 
-    private View sizeStepper(int label, int[] size, int index, int min, int max) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(Math.round(dp(52)));
-        TextView l = new TextView(this);
-        l.setText(label);
-        l.setTextSize(16);
-        l.setTextColor(0xFFE6F0FF);
-        row.addView(l, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        TextView minus = new TextView(this), value = new TextView(this), plus = new TextView(this);
-        for (TextView b : new TextView[] {minus, plus}) {
-            b.setTextSize(22);
-            b.setGravity(Gravity.CENTER);
-            b.setTextColor(prefs.accent());
-            b.setBackgroundResource(android.R.drawable.list_selector_background);
-        }
-        minus.setText("−");
-        plus.setText("+");
-        value.setTextSize(16);
-        value.setGravity(Gravity.CENTER);
-        value.setTextColor(0xFFE6F0FF);
-        Runnable sync = () -> {
-            value.setText(String.valueOf(size[index]));
-            minus.setAlpha(size[index] > min ? 1f : 0.3f);
-            plus.setAlpha(size[index] < max ? 1f : 0.3f);
-        };
-        minus.setOnClickListener(v -> { if (size[index] > min) { size[index]--; sync.run(); } });
-        plus.setOnClickListener(v -> { if (size[index] < max) { size[index]++; sync.run(); } });
-        sync.run();
-        int b = Math.round(dp(44));
-        row.addView(minus, new LinearLayout.LayoutParams(b, b));
-        row.addView(value, new LinearLayout.LayoutParams(Math.round(dp(36)), LinearLayout.LayoutParams.WRAP_CONTENT));
-        row.addView(plus, new LinearLayout.LayoutParams(b, b));
-        return row;
+    private final OnBackInvokedCallback endResizeOnBack = this::endResize;
+
+    private void endResize() {
+        if (resizeFrame == null) return;
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(endResizeOnBack);
+        ((ViewGroup) resizeFrame.getParent()).removeView(resizeFrame);
+        resizeFrame = null;
+        resizing = null;
+        grid.clearHighlight();
     }
 
     private void pickWallpaper() {

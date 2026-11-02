@@ -77,6 +77,7 @@ final class Prefs {
     static final String DOCK_PAGES = "dock_pages";
     static final String AZ_SCROLLER = "az_scroller";
     static final String MOST_USED = "most_used";
+    static final String SUBGRID = "subgrid";
     static final String GESTURE_UP = "gesture_up";
     static final String GESTURE_DOWN = "gesture_down";
     static final String GESTURE_LEFT = "gesture_left";
@@ -201,6 +202,10 @@ final class Prefs {
     void setAzScroller(boolean v) { sp.edit().putBoolean(AZ_SCROLLER, v).apply(); }
 
     boolean mostUsed() { return sp.getBoolean(MOST_USED, true); }
+
+    /** Home on a half-cell grid: icons and widgets can sit between whole cells. */
+    boolean subgrid() { return sp.getBoolean(SUBGRID, false); }
+    void setSubgrid(boolean v) { sp.edit().putBoolean(SUBGRID, v).apply(); }
 
     /** What a swipe does: one of GESTURE_ACTIONS, or "app:<key>". */
     String gesture(String which) {
@@ -388,6 +393,7 @@ final class Prefs {
         o.put(DOCK_PAGES, dockPages());
         o.put(AZ_SCROLLER, azScroller());
         o.put(MOST_USED, mostUsed());
+        o.put(SUBGRID, subgrid());
         for (String g : new String[] {GESTURE_UP, GESTURE_DOWN, GESTURE_LEFT, GESTURE_RIGHT}) o.put(g, gesture(g));
         return o;
     }
@@ -408,7 +414,7 @@ final class Prefs {
                 case DRAWER_LABELS: case HIDDEN_SEARCHABLE:
                 case LABEL_ACCENT: case LABEL_SHADOW: case LABEL_TWO_LINES: case LOCK_LAYOUT:
                 case SCROLL_WALLPAPER: case ALLOW_ROTATION: case AZ_SCROLLER: case MOST_USED:
-                case ACCENT_GRADIENT:
+                case ACCENT_GRADIENT: case SUBGRID:
                     e.putBoolean(k, o.getBoolean(k));
                     break;
                 case GESTURE_UP: case GESTURE_DOWN: case GESTURE_LEFT: case GESTURE_RIGHT: {

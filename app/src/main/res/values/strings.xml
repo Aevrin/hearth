@@ -218,5 +218,7 @@
     <string name="widget_settings">Widget settings</string>
     <string name="widget_width">Width</string>
     <string name="widget_height">Height</string>
+    <string name="widget_resize_hint">Drag the handles to resize. Tap outside to finish.</string>
+    <string name="subgrid">Subgrid positioning (place icons and widgets on half cells)</string>
     <string name="widget_resize_no_room">Not enough free space around it for that size. Move things out of the way first.</string>
 </resources>

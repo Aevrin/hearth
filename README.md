@@ -57,9 +57,11 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   previews, sizes and a search box. Hearth places it in the first free space big enough (on the
   current page first), running the widget's own setup screen if it has one. The first time you add
   a widget from an app, Android asks whether Hearth may create widgets.
-  - Long-press a widget for **Resize** (width and height in cells, within the widget's own limits),
-    **Widget settings** (for widgets that support it) and **Remove**; keep holding and move to drag
-    it. It only drops where all its cells are free; the highlight shows its whole footprint.
+  - Long-press a widget for **Resize**, **Widget settings** (for widgets that support it) and
+    **Remove**; keep holding and move to drag it. It only drops where all its cells are free; the
+    highlight shows its whole footprint.
+  - **Resize** puts a frame with handles around the widget: drag an edge and the grid shows where
+    it will snap (within the widget's own limits and the free space). Tap outside or Back to finish.
   - Icons slide around widgets, never through them. Widgets live on home pages only (not the dock
     or folders). A widget whose app was uninstalled, or one restored from a backup on another
     phone, shows as "Widget unavailable" until you remove it.
@@ -86,8 +88,12 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     Change icon.
     Generated icons are cached on disk so they appear instantly after a restart.
   - **Clock:** show/hide, date, seconds, phone / 12-hour / 24-hour.
-  - **Home screen:** columns (3–8), rows (3–9), pages (1–7), lock, scroll wallpaper, allow
-    rotation. Shrinking never deletes apps.
+  - **Home screen:** columns (3–8), rows (3–9), pages (1–7), **subgrid positioning**, lock, scroll
+    wallpaper, allow rotation. Shrinking never deletes apps.
+    - *Subgrid* splits every home cell in four, so icons, folders and widgets can sit on half
+      cells (icons centre under your finger as you drag) and widgets resize in half steps. Icons
+      no longer slide aside on the subgrid: drop on free space to move, or on the middle of an icon
+      to make a folder. Turning it on or off converts your layout in place.
   - **Dock:** on/off, slots (3–7), pages (1–3), icon size.
   - **App drawer:** columns (3–7), icon size, A–Z strip, Most used, hidden apps and whether
     search finds them.

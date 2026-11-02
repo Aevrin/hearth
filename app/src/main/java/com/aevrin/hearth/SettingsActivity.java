@@ -270,6 +270,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         stepper(R.string.home_columns, prefs.columns(), 3, 8, prefs::setColumns);
         stepper(R.string.home_rows, prefs.rows(), 3, 9, prefs::setRows);
         stepper(R.string.home_pages, prefs.pages(), 1, 7, prefs::setPages);
+        toggle(R.string.subgrid, prefs.subgrid(), prefs::setSubgrid);
         toggle(R.string.lock_layout_setting, prefs.lockLayout(), prefs::setLockLayout);
         toggle(R.string.scroll_wallpaper, prefs.scrollWallpaper(), prefs::setScrollWallpaper);
         toggle(R.string.allow_rotation, prefs.allowRotation(), prefs::setAllowRotation);
