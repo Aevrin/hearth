@@ -68,7 +68,7 @@ dependencies {
 
     // Tests only; nothing here ships in the app.
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.json:json:20260814")
 }
 
 // An unsigned bundle is useless to Play; fail early with a clear message instead.
