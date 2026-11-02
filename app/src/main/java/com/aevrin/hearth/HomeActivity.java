@@ -123,7 +123,7 @@ public class HomeActivity extends Activity
         final View view;
         final boolean fromDrawer;
         float startX, startY;       // screen coordinates where the drag began
-        boolean movedFar, droppedInPlace;
+        boolean movedFar;
         DragState(HomeLayout.Item item, String key, AppEntry app, View view, boolean fromDrawer) {
             this.item = item; this.key = key; this.app = app; this.view = view; this.fromDrawer = fromDrawer;
         }
@@ -634,13 +634,23 @@ public class HomeActivity extends Activity
 
     /* ---------- drag and drop ---------- */
 
+    // Same as the drawer: the menu opens straight away; moving the finger closes it
+    // and picks the item up. Locked: menu only, nothing moves.
     private void onItemLongPress(HomeLayout.Item item, View view) {
-        if (prefs.lockLayout()) {
-            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-            showItemMenu(item, view); // locked: menu only, nothing moves
-            return;
-        }
-        startDrag(new DragState(item, item.key, repo.find(item.key), view, false));
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        PopupMenu menu = showItemMenu(item, view);
+        if (prefs.lockLayout()) return;
+        armDrag(new DragState(item, item.key, repo.find(item.key), view, false), menu);
+    }
+
+    /** Waits to see whether a long-press turns into a drag (see trackPendingDrag). */
+    private void armDrag(DragState st, PopupMenu menu) {
+        // Stop a scrolling parent (the drawer list) taking the gesture meanwhile.
+        if (st.view.getParent() != null) st.view.getParent().requestDisallowInterceptTouchEvent(true);
+        st.startX = lastTouchX;
+        st.startY = lastTouchY;
+        pendingDrag = st;
+        pendingMenu = menu;
     }
 
     private void startDrag(DragState st) {
@@ -648,7 +658,6 @@ public class HomeActivity extends Activity
         st.startY = lastTouchY;
         ClipData data = ClipData.newPlainText("hearth", st.key);
         if (!st.view.startDragAndDrop(data, new View.DragShadowBuilder(st.view), st, 0)) return;
-        st.view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         if (!st.fromDrawer) st.view.setVisibility(View.INVISIBLE);
         dropRemove.setVisibility(st.item != null ? View.VISIBLE : View.GONE);
         dropInfo.setVisibility(st.app != null ? View.VISIBLE : View.GONE);
@@ -693,7 +702,7 @@ public class HomeActivity extends Activity
                 int x = plan[1], y = plan[2], page = plan[3];
                 HomeLayout.Item other = layout.at(container, page, x, y);
                 if (st.item != null && other == st.item) {
-                    st.droppedInPlace = true; // a long-press that didn't move: show the menu
+                    // put back where it was: nothing to do
                 } else if (plan[0] == CellLayout.HL_MOVE) {
                     if (st.item != null) layout.move(st.item, container, page, x, y);
                     else layout.addAt(st.key, container, page, x, y);
@@ -742,11 +751,6 @@ public class HomeActivity extends Activity
         for (TextView t : new TextView[] {dropRemove, dropInfo, dropUninstall}) t.setActivated(false);
         refreshHome();
         syncPins();
-        if (st.droppedInPlace && st.item != null) {
-            // The icons were just rebuilt; wait until they're laid out, or the menu
-            // anchors to a view still at (0,0) and opens at the top of the screen.
-            afterLayout(grid, () -> showItemMenu(st.item, findItemView(st.item)));
-        }
         return true;
     }
 
@@ -774,31 +778,15 @@ public class HomeActivity extends Activity
         pendingEdgeDirection = 0;
     }
 
-    private View findItemView(HomeLayout.Item item) {
-        CellLayout parent = HomeLayout.DOCK.equals(item.container) ? dock : grid;
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            CellLayout.LayoutParams lp = (CellLayout.LayoutParams) parent.getChildAt(i).getLayoutParams();
-            if (lp.cellX == item.x && lp.cellY == item.y) return parent.getChildAt(i);
-        }
-        return null;
-    }
-
     /* ---------- menus ---------- */
 
     /** Menu for something on the home screen or dock. */
-    private void showItemMenu(HomeLayout.Item item, View anchor) {
-        if (anchor == null) return;
+    private PopupMenu showItemMenu(HomeLayout.Item item, View anchor) {
         HomeLayout.Folder folder = layout.folder(item);
-        if (folder != null) {
-            showFolderMenu(item, folder, anchor);
-            return;
-        }
+        if (folder != null) return showFolderMenu(item, folder, anchor);
         AppEntry app = repo.find(item.key);
-        if (app != null) {
-            showAppMenu(app, anchor, item);
-            return;
-        }
-        if (prefs.lockLayout()) return;
+        if (app != null) return showAppMenu(app, anchor, item);
+        if (prefs.lockLayout()) return null;
         PopupMenu menu = new PopupMenu(this, anchor); // a pinned shortcut
         menu.getMenu().add(0, 1, 0, HomeLayout.DOCK.equals(item.container) ? R.string.remove_from_dock : R.string.remove_from_home);
         menu.setOnMenuItemClickListener(mi -> {
@@ -808,6 +796,7 @@ public class HomeActivity extends Activity
             return true;
         });
         menu.show();
+        return menu;
     }
 
     /**
@@ -876,7 +865,7 @@ public class HomeActivity extends Activity
         return menu;
     }
 
-    private void showFolderMenu(HomeLayout.Item item, HomeLayout.Folder folder, View anchor) {
+    private PopupMenu showFolderMenu(HomeLayout.Item item, HomeLayout.Folder folder, View anchor) {
         boolean locked = prefs.lockLayout();
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add(0, 1, 0, R.string.open_folder);
@@ -902,6 +891,7 @@ public class HomeActivity extends Activity
             }
         });
         menu.show();
+        return menu;
     }
 
     /** A popup menu that opens at the last press, for presses on empty space. */
@@ -1145,13 +1135,7 @@ public class HomeActivity extends Activity
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         PopupMenu menu = showAppMenu(app, view, null);
         if (prefs.lockLayout()) return;
-        // Stop the list scrolling under the finger while we wait to see if it moves.
-        if (view.getParent() != null) view.getParent().requestDisallowInterceptTouchEvent(true);
-        DragState st = new DragState(null, app.key, app, view, true);
-        st.startX = lastTouchX;
-        st.startY = lastTouchY;
-        pendingDrag = st;
-        pendingMenu = menu;
+        armDrag(new DragState(null, app.key, app, view, true), menu);
     }
 
     // The rest of the long-press gesture still comes to this window, even with the menu up.
@@ -1165,7 +1149,7 @@ public class HomeActivity extends Activity
                 pendingMenu = null;
                 st.movedFar = true;
                 startDrag(st);        // captures the icon for the drag shadow first...
-                hideDrawerForDrag();  // ...then reveals the home screen to drop on
+                if (st.fromDrawer) hideDrawerForDrag(); // ...then reveals the home screen to drop on
                 return;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:

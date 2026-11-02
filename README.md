@@ -25,13 +25,13 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 ### What works now
 
 - **Home screen:** a clock, one or more pages of apps, shortcuts and folders, and a dock, over your wallpaper.
-  - Tap to open. Long-press and **drag** to move, including between the grid, the dock and pages
-    (hold a dragged icon at the left or right edge to flip page).
+  - Tap to open. Long-press for a menu; keep holding and move your finger to **drag** instead,
+    including between the grid, the dock and pages (hold at the left or right edge to flip page).
   - The cell under your finger lights up to show what a drop will do: a plain fill moves it there,
     a ring (dropping on the middle of an icon) makes or joins a **folder**, and a bar (dropping on
     the edge of an icon) **slides the others along** to make room.
   - While dragging, a bar at the top offers **Remove**, **App info** and **Uninstall**.
-  - Long-press an app without moving for its menu: the app's own **shortcuts** first (e.g. "New
+  - An app's menu lists its own **shortcuts** first (e.g. "New
     message"), then Rename, Change icon, Remove, App info, Uninstall.
   - **Pinned shortcuts:** when another app offers "Add to home screen" (a contact, a site, a
     playlist), Hearth asks and places it on your default page.
