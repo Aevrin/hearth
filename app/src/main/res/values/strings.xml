@@ -280,4 +280,8 @@
     <string name="sidebar_empty_locked">Empty. Unlock the home screen to add things.</string>
     <string name="move_up">Move up</string>
     <string name="move_down">Move down</string>
+
+    <string name="section_folders">Folders</string>
+    <string name="preview_loading">Loading apps…</string>
+    <string name="folder_spacing">Space between apps in a folder</string>
 </resources>

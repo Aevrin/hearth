@@ -99,6 +99,7 @@ final class Prefs {
     static final String SIDEBAR_HANDLE_POS = "sidebar_handle_pos";
     static final String SIDEBAR_HANDLE_SHOWN = "sidebar_handle_shown";
     static final String SIDEBAR_ZONE = "sidebar_zone";
+    static final String FOLDER_SPACING = "folder_spacing";
     /** Swipe-in zone widths, in dp: narrow, wide, ultra wide. */
     static final int[] ZONE_WIDTHS = {24, 48, 72};
     static final int HANDLE_TOP = 0, HANDLE_MIDDLE = 1, HANDLE_BOTTOM = 2;
@@ -262,6 +263,10 @@ final class Prefs {
     int sidebarHandlePos() { return clamp(sp.getInt(SIDEBAR_HANDLE_POS, HANDLE_MIDDLE), HANDLE_TOP, HANDLE_BOTTOM); }
     void setSidebarHandlePos(int v) { sp.edit().putInt(SIDEBAR_HANDLE_POS, v).apply(); }
     boolean sidebarHandleShown() { return sp.getBoolean(SIDEBAR_HANDLE_SHOWN, true); }
+    /** 0–100: space between apps in an open folder (30 matches the original spacing). */
+    int folderSpacing() { return clamp(sp.getInt(FOLDER_SPACING, 30), 0, 100); }
+    void setFolderSpacing(int v) { sp.edit().putInt(FOLDER_SPACING, clamp(v, 0, 100)).apply(); }
+
     int sidebarZone() { return clamp(sp.getInt(SIDEBAR_ZONE, 0), 0, ZONE_WIDTHS.length - 1); }
     void setSidebarZone(int v) { sp.edit().putInt(SIDEBAR_ZONE, v).apply(); }
     void setSidebarHandleShown(boolean v) { sp.edit().putBoolean(SIDEBAR_HANDLE_SHOWN, v).apply(); }
@@ -497,6 +502,7 @@ final class Prefs {
         o.put(SIDEBAR_HANDLE_POS, sidebarHandlePos());
         o.put(SIDEBAR_HANDLE_SHOWN, sidebarHandleShown());
         o.put(SIDEBAR_ZONE, sidebarZone());
+        o.put(FOLDER_SPACING, folderSpacing());
         o.put(SIDEBAR_LEFT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_LEFT)));
         for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) {
             o.put(side + BG_MODE, sidebarBgMode(side));
@@ -525,6 +531,7 @@ final class Prefs {
                 case DOCK_SLOTS: case DRAWER_COLUMNS: case ICON_SIZE:
                 case DOCK_ICON_SIZE: case DRAWER_ICON_SIZE: case LABEL_SIZE: case DEFAULT_PAGE: case DOCK_PAGES:
                 case ACCENT_DIRECTION: case STATUS_ICONS: case NAV_ICONS: case SIDEBAR_HANDLE_POS: case SIDEBAR_ZONE:
+                case FOLDER_SPACING:
                     e.putInt(k, o.getInt(k));
                     break;
                 case SHOW_CLOCK: case SHOW_DATE: case SHOW_SECONDS: case SHOW_DOCK: case HOME_LABELS:

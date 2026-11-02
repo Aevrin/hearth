@@ -116,6 +116,7 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - **Clock:** show/hide, date, seconds, phone / 12-hour / 24-hour.
   - **Home screen:** columns (3–8), rows (3–9), pages (1–7), **subgrid positioning**, lock, scroll
     wallpaper, allow rotation. Shrinking never deletes apps.
+    **Folder spacing** slider with a live preview of an open folder.
     - *Subgrid* splits every home cell in four, so icons, folders and widgets can sit on half
       cells (icons centre under your finger as you drag) and widgets resize in half steps. Icons
       no longer slide aside on the subgrid: drop on free space to move, or on the middle of an icon

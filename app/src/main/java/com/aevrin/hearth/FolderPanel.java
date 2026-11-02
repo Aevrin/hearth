@@ -174,8 +174,8 @@ final class FolderPanel {
         if (host.prefs().labelAccent()) host.prefs().accentStyle().paint(title);
         else Accent.plain(title, activity.getColor(R.color.text_primary));
         grid.removeAllViews();
-        int cellW = Math.round(dp(76));
-        int cellH = Math.round(dp(92));
+        int[] m = metrics(activity, host.prefs(), host.homeIconPx());
+        int cellW = m[0], cellH = m[1], gap = m[2];
         int count = 0;
         boolean labels = host.prefs().homeLabels();
         for (String key : f.apps) {
@@ -195,6 +195,7 @@ final class FolderPanel {
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
             lp.width = cellW;
             lp.height = cellH;
+            lp.setMargins(gap, gap, gap, gap);
             grid.addView(v, lp);
         }
         // Square-ish: 2 columns up to 4 apps (2×1, 2×2), 3 up to 9, 4 up to 16, then 5 —
@@ -203,13 +204,14 @@ final class FolderPanel {
         int screenW = root.getWidth() > 0 ? root.getWidth() : activity.getResources().getDisplayMetrics().widthPixels;
         int screenH = root.getHeight() > 0 ? root.getHeight() : activity.getResources().getDisplayMetrics().heightPixels;
         int wanted = count <= 4 ? 2 : count <= 9 ? 3 : count <= 16 ? 4 : 5;
-        int fit = Math.max(2, (screenW - Math.round(dp(16 + 24))) / cellW);
+        int fit = Math.max(2, (screenW - Math.round(dp(16 + 24))) / (cellW + 2 * gap));
         int cols = Math.min(wanted, fit);
         grid.setColumnCount(cols);
         int rows = (count + cols - 1) / cols;
         int maxH = screenH - Math.round(dp(220)); // room for the title, system bars and margins
         LinearLayout.LayoutParams slp = (LinearLayout.LayoutParams) scroller.getLayoutParams();
-        slp.height = rows * cellH > maxH ? Math.max(cellH, maxH) : LinearLayout.LayoutParams.WRAP_CONTENT;
+        int rowH = cellH + 2 * gap;
+        slp.height = rows * rowH > maxH ? Math.max(rowH, maxH) : LinearLayout.LayoutParams.WRAP_CONTENT;
         scroller.setLayoutParams(slp);
         scroller.scrollTo(0, 0);
     }
@@ -287,6 +289,20 @@ final class FolderPanel {
             activity.getSystemService(InputMethodManager.class).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
         });
         dialog.show();
+    }
+
+    /**
+     * Size of one app in an open folder, {cell width, cell height, margin on each
+     * side}, from the icon size, labels and the folder spacing setting. Settings
+     * uses this too, for its preview.
+     */
+    static int[] metrics(android.content.Context c, Prefs p, int iconPx) {
+        float d = c.getResources().getDisplayMetrics().density;
+        int labelH = p.homeLabels() ? Math.round(d * (p.labelTwoLines() ? 36 : 20)) : 0;
+        int w = Math.max(Math.round(64 * d), iconPx + Math.round(8 * d));
+        int h = Math.max(p.homeLabels() ? Math.round(80 * d) : w, iconPx + labelH + Math.round(16 * d));
+        int gap = Math.round(p.folderSpacing() * 0.2f * d); // 0–20dp each side
+        return new int[] {w, h, gap};
     }
 
     private float dp(float v) {

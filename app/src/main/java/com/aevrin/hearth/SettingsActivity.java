@@ -15,6 +15,7 @@ import android.text.Editable;
 import android.text.InputFilter;
 import android.text.TextWatcher;
 import android.widget.EditText;
+import android.widget.GridLayout;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -118,6 +119,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     @Override
     public void onAppsChanged() {
         refreshPreview();
+        if (page == HOME) build(); // the folder preview's icons have loaded
         if (page == GESTURES) build(); // a just-picked shortcut now has its name
         if (hiddenButton != null) {
             hiddenButton.setEnabled(true);
@@ -284,6 +286,64 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         toggle(R.string.scroll_wallpaper, prefs.scrollWallpaper(), prefs::setScrollWallpaper);
         toggle(R.string.allow_rotation, prefs.allowRotation(), prefs::setAllowRotation);
         note(R.string.layout_note);
+
+        header(R.string.section_folders);
+        LinearLayout box = new LinearLayout(this);
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
+        GridLayout folderPreview = new GridLayout(this);
+        box.addView(folderPreview);
+        slider(R.string.folder_spacing, prefs.folderSpacing(), v -> {
+            prefs.setFolderSpacing(v);
+            fillFolderPreview(folderPreview);
+        });
+        LinearLayout.LayoutParams flp = matchWrap();
+        flp.topMargin = dp(12);
+        content.addView(box, flp);
+        fillFolderPreview(folderPreview);
+    }
+
+    // A small open folder with real icons, laid out exactly like the real one.
+    private void fillFolderPreview(GridLayout g) {
+        g.removeAllViews();
+        int iconPx = Math.round(getResources().getDimension(R.dimen.icon_size) * Prefs.ICON_SCALES[prefs.iconSize()]);
+        int[] m = FolderPanel.metrics(this, prefs, iconPx);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Prefs.background(Math.max(prefs.drawerOpacity(), 85)));
+        bg.setCornerRadius(dp(20));
+        g.setBackground(bg);
+        g.setPadding(dp(12), dp(12), dp(12), dp(12));
+        g.setColumnCount(4);
+        List<AppEntry> apps = repo.apps();
+        for (int i = 0; i < Math.min(8, apps.size()); i++) {
+            AppEntry e = apps.get(i);
+            LinearLayout cell = new LinearLayout(this);
+            cell.setOrientation(LinearLayout.VERTICAL);
+            cell.setGravity(Gravity.CENTER);
+            ImageView iv = new ImageView(this);
+            cell.addView(iv, new LinearLayout.LayoutParams(iconPx, iconPx));
+            repo.loadIcon(e, iv::setImageDrawable);
+            if (prefs.homeLabels()) {
+                TextView t = new TextView(this);
+                String c = prefs.customLabel(e.key);
+                t.setText(c != null ? c : e.label);
+                t.setGravity(Gravity.CENTER);
+                t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                prefs.styleLabel(t);
+                cell.addView(t, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+            }
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+            lp.width = m[0];
+            lp.height = m[1];
+            lp.setMargins(m[2], m[2], m[2], m[2]);
+            g.addView(cell, lp);
+        }
+        if (apps.isEmpty()) {
+            TextView t = new TextView(this);
+            t.setText(R.string.preview_loading);
+            t.setTextColor(getColor(R.color.text_muted));
+            g.addView(t);
+        }
     }
 
     private void buildDock() {
