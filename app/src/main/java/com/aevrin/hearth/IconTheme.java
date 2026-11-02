@@ -183,6 +183,36 @@ final class IconTheme {
         return bmp;
     }
 
+    /** A picture (a folder's custom image), centre-cropped and cut to the icon shape. */
+    Bitmap image(Bitmap src) {
+        Bitmap bmp = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        float scale = Math.max(SIZE / (float) src.getWidth(), SIZE / (float) src.getHeight());
+        Matrix m = new Matrix();
+        m.setScale(scale, scale);
+        m.postTranslate((SIZE - src.getWidth() * scale) / 2f, (SIZE - src.getHeight() * scale) / 2f);
+        c.drawBitmap(src, m, new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG));
+        mask(bmp);
+        return bmp;
+    }
+
+    /** One or two characters (a letter, an emoji) in the accent on a dark plate. */
+    Bitmap glyph(String text) {
+        Bitmap bmp = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        fillPlate(c, PLATE);
+        Paint t = new Paint(Paint.ANTI_ALIAS_FLAG);
+        t.setColor(accent.solid());
+        t.setShader(accent.shader(0, 0, SIZE, SIZE, 255)); // emoji keep their own colours
+        t.setTextSize(SIZE * (text.codePointCount(0, text.length()) > 1 ? 0.36f : 0.46f));
+        t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        t.setTextAlign(Paint.Align.CENTER);
+        Paint.FontMetrics fm = t.getFontMetrics();
+        c.drawText(text, SIZE / 2f, SIZE / 2f - (fm.ascent + fm.descent) / 2f, t);
+        mask(bmp);
+        return bmp;
+    }
+
     /** A plain plate in the current shape, for folder backgrounds. */
     Path shapePath(float size) {
         Path p = new Path();

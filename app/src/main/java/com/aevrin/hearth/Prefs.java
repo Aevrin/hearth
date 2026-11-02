@@ -78,6 +78,7 @@ final class Prefs {
     static final String AZ_SCROLLER = "az_scroller";
     static final String MOST_USED = "most_used";
     static final String SUBGRID = "subgrid";
+    static final String SEARCH_ON_PULL = "search_on_pull";
     static final String STATUS_ICONS = "status_icons";
     static final String NAV_ICONS = "nav_icons";
     /** System bar icon shade: follow the wallpaper, always light, always dark. */
@@ -209,6 +210,10 @@ final class Prefs {
 
     /** Home on a half-cell grid: icons and widgets can sit between whole cells. */
     boolean subgrid() { return sp.getBoolean(SUBGRID, false); }
+
+    /** The drawer opens without its search bar; pulling down at the top reveals it. */
+    boolean searchOnPull() { return sp.getBoolean(SEARCH_ON_PULL, false); }
+    void setSearchOnPull(boolean v) { sp.edit().putBoolean(SEARCH_ON_PULL, v).apply(); }
 
     int statusIcons() { return clamp(sp.getInt(STATUS_ICONS, ICONS_AUTO), ICONS_AUTO, ICONS_DARK); }
     void setStatusIcons(int v) { sp.edit().putInt(STATUS_ICONS, v).apply(); }
@@ -403,6 +408,7 @@ final class Prefs {
         o.put(AZ_SCROLLER, azScroller());
         o.put(MOST_USED, mostUsed());
         o.put(SUBGRID, subgrid());
+        o.put(SEARCH_ON_PULL, searchOnPull());
         o.put(STATUS_ICONS, statusIcons());
         o.put(NAV_ICONS, navIcons());
         for (String g : new String[] {GESTURE_UP, GESTURE_DOWN, GESTURE_LEFT, GESTURE_RIGHT}) o.put(g, gesture(g));
@@ -425,7 +431,7 @@ final class Prefs {
                 case DRAWER_LABELS: case HIDDEN_SEARCHABLE:
                 case LABEL_ACCENT: case LABEL_SHADOW: case LABEL_TWO_LINES: case LOCK_LAYOUT:
                 case SCROLL_WALLPAPER: case ALLOW_ROTATION: case AZ_SCROLLER: case MOST_USED:
-                case ACCENT_GRADIENT: case SUBGRID:
+                case ACCENT_GRADIENT: case SUBGRID: case SEARCH_ON_PULL:
                     e.putBoolean(k, o.getBoolean(k));
                     break;
                 case GESTURE_UP: case GESTURE_DOWN: case GESTURE_LEFT: case GESTURE_RIGHT: {

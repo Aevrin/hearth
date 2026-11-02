@@ -228,4 +228,15 @@
     <string name="widget_resize_hint">Drag the handles to resize. Tap outside to finish.</string>
     <string name="subgrid">Subgrid positioning (place icons and widgets on half cells)</string>
     <string name="widget_resize_no_room">Not enough free space around it for that size. Move things out of the way first.</string>
+
+    <!-- Folder icons, drawer search -->
+    <string name="folder_icon_contents">Show the apps inside</string>
+    <string name="folder_icon_app">Use an app\'s icon…</string>
+    <string name="folder_icon_text">Letter or emoji…</string>
+    <string name="folder_icon_image">Picture from your phone…</string>
+    <string name="folder_icon_text_hint">One or two characters, e.g. W or 🎮</string>
+    <string name="folder_icon_image_failed">Couldn\'t use that picture</string>
+    <string name="search_bar">Search bar</string>
+    <string name="search_always">Always shown</string>
+    <string name="search_pull">Pull down to show</string>
 </resources>

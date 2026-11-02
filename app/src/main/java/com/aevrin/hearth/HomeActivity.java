@@ -80,6 +80,7 @@ public class HomeActivity extends Activity
     private static final long EDGE_PAGE_DELAY_MS = 550;
     private static final int MENU_SHORTCUT_BASE = 1000;
     private static final int REQ_WIDGET_BIND = 21, REQ_WIDGET_CONFIGURE = 22, REQ_WIDGET_RECONFIGURE = 23;
+    private static final int REQ_FOLDER_IMAGE = 31;
 
     private AppRepository repo;
     private HomeLayout layout;
@@ -93,6 +94,10 @@ public class HomeActivity extends Activity
     // A widget being added: waiting on the bind permission or its setup screen.
     private int pendingWidgetId = -1;
     private int pendingWidgetPage;
+    private String pendingFolderImage; // folder id waiting for a picked picture
+    /** Rendered custom folder icons, by folder id + icon + theme. */
+    private final Map<String, android.graphics.Bitmap> folderIcons = new HashMap<>();
+    private float dropRemoveScale = 1f; // the trash can is bigger while dragging a widget
     // Live "make room" preview while hovering to insert.
     private CellLayout previewTarget;
     private int previewX = -1, previewY = -1, previewPage = -1;
@@ -164,6 +169,10 @@ public class HomeActivity extends Activity
         setContentView(R.layout.activity_home);
         prefs = new Prefs(this);
         wallpaper = WallpaperManager.getInstance(this);
+        // No translucent backing behind the system bars: it washes out dark button
+        // icons. Hearth picks light or dark icons for the wallpaper instead.
+        getWindow().setNavigationBarContrastEnforced(false);
+        getWindow().setStatusBarContrastEnforced(false);
         widgetHost = new WidgetHost(this);
         widgetManager = AppWidgetManager.getInstance(this);
         if (savedInstanceState != null) {
@@ -259,7 +268,9 @@ public class HomeActivity extends Activity
                 if (!drawerOpen && dy < -dp(60)) return runGesture(prefs.gesture(Prefs.GESTURE_UP));
                 if (!drawerOpen && dy > dp(60)) return runGesture(prefs.gesture(Prefs.GESTURE_DOWN));
                 if (drawerOpen && dy > dp(60) && !drawerList.canScrollVertically(-1)) {
-                    closeDrawer();
+                    // Pull-to-search: the first pull at the top shows the search bar.
+                    if (search.getVisibility() != View.VISIBLE) revealSearch();
+                    else closeDrawer();
                     return true;
                 }
                 return false;
@@ -600,6 +611,7 @@ public class HomeActivity extends Activity
                 return true;
             case Prefs.G_SEARCH:
                 openDrawer();
+                search.setVisibility(View.VISIBLE);
                 search.requestFocus();
                 search.post(() -> getSystemService(InputMethodManager.class)
                         .showSoftInput(search, InputMethodManager.SHOW_IMPLICIT));
@@ -789,6 +801,16 @@ public class HomeActivity extends Activity
 
     /** Same layout as an app icon, with the folder's mini-icon plate in place of the icon. */
     private View makeFolderIcon(HomeLayout.Folder folder, ViewGroup parent, boolean showLabel, int iconPx) {
+        View custom = folder.icon == null ? null : makeCustomFolderIcon(folder, parent, iconPx);
+        if (custom != null) {
+            TextView label = custom.findViewById(R.id.label);
+            String name = folders.nameOf(folder);
+            label.setText(name);
+            prefs.styleLabel(label);
+            label.setVisibility(showLabel ? View.VISIBLE : View.GONE);
+            custom.setContentDescription(getString(R.string.folder_description, name, folder.apps.size()));
+            return custom;
+        }
         View v = LayoutInflater.from(this).inflate(R.layout.item_icon, parent, false);
         ViewGroup box = (ViewGroup) v;
         View img = v.findViewById(R.id.icon);
@@ -819,6 +841,160 @@ public class HomeActivity extends Activity
         label.setVisibility(showLabel ? View.VISIBLE : View.GONE);
         v.setContentDescription(getString(R.string.folder_description, name, folder.apps.size()));
         return v;
+    }
+
+    /** A folder shown with its own icon (an app's, a character or a picture), or null to use mini icons. */
+    private View makeCustomFolderIcon(HomeLayout.Folder folder, ViewGroup parent, int iconPx) {
+        View v = LayoutInflater.from(this).inflate(R.layout.item_icon, parent, false);
+        ImageView icon = v.findViewById(R.id.icon);
+        ViewGroup.LayoutParams lp = icon.getLayoutParams();
+        lp.width = iconPx;
+        lp.height = iconPx;
+        icon.setLayoutParams(lp);
+        String spec = folder.icon;
+        if (spec.startsWith("app:")) {
+            AppEntry app = repo.find(spec.substring(4));
+            if (app == null) return null;
+            repo.loadIcon(app, icon::setImageDrawable);
+            return v;
+        }
+        String cacheKey = folder.id + "|" + spec.hashCode() + "|" + repo.theme().signature;
+        android.graphics.Bitmap bmp = folderIcons.get(cacheKey);
+        if (bmp == null) {
+            try {
+                if (spec.startsWith("text:")) {
+                    bmp = repo.theme().glyph(spec.substring(5));
+                } else if (spec.startsWith("image:")) {
+                    byte[] png = android.util.Base64.decode(spec.substring(6), android.util.Base64.DEFAULT);
+                    android.graphics.Bitmap src = android.graphics.BitmapFactory.decodeByteArray(png, 0, png.length);
+                    if (src == null) return null;
+                    bmp = repo.theme().image(src);
+                } else {
+                    return null;
+                }
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+            folderIcons.put(cacheKey, bmp);
+        }
+        icon.setImageBitmap(bmp);
+        return v;
+    }
+
+    /** Long-press → Change icon on a folder. */
+    private void changeFolderIcon(HomeLayout.Folder folder) {
+        String[] choices = {getString(R.string.folder_icon_contents), getString(R.string.folder_icon_app),
+                getString(R.string.folder_icon_text), getString(R.string.folder_icon_image)};
+        int checked = folder.icon == null ? 0 : folder.icon.startsWith("app:") ? 1
+                : folder.icon.startsWith("text:") ? 2 : 3;
+        new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.change_icon_for, folders.nameOf(folder)))
+                .setSingleChoiceItems(choices, checked, (d, which) -> {
+                    d.dismiss();
+                    switch (which) {
+                        case 0: setFolderIcon(folder, null); break;
+                        case 1: pickFolderIconApp(folder); break;
+                        case 2: pickFolderIconText(folder); break;
+                        default: pickFolderIconImage(folder); break;
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void setFolderIcon(HomeLayout.Folder folder, String icon) {
+        layout.setFolderIcon(folder, icon);
+        refreshHome();
+    }
+
+    // The folder's own apps first, then everything else.
+    private void pickFolderIconApp(HomeLayout.Folder folder) {
+        List<AppEntry> apps = new java.util.ArrayList<>();
+        for (String k : folder.apps) {
+            AppEntry e = repo.find(k);
+            if (e != null) apps.add(e);
+        }
+        for (AppEntry e : repo.apps()) if (!apps.contains(e)) apps.add(e);
+        String[] names = new String[apps.size()];
+        for (int i = 0; i < apps.size(); i++) names[i] = adapter.labelOf(apps.get(i));
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.folder_icon_app)
+                .setItems(names, (d, i) -> setFolderIcon(folder, "app:" + apps.get(i).key))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void pickFolderIconText(HomeLayout.Folder folder) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint(R.string.folder_icon_text_hint);
+        String current = folder.icon != null && folder.icon.startsWith("text:") ? folder.icon.substring(5) : "";
+        input.setText(current);
+        input.setSelectAllOnFocus(true);
+        FrameLayout box = new FrameLayout(this);
+        int pad = Math.round(dp(20));
+        box.setPadding(pad, Math.round(dp(8)), pad, 0);
+        box.addView(input);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.folder_icon_text)
+                .setView(box)
+                .setPositiveButton(R.string.save, (d, w) -> {
+                    String t = input.getText().toString().trim();
+                    if (t.isEmpty()) return;
+                    // Up to two characters (an emoji with modifiers counts as one).
+                    java.text.BreakIterator it = java.text.BreakIterator.getCharacterInstance();
+                    it.setText(t);
+                    int end = it.next(), second = it.next();
+                    if (second != java.text.BreakIterator.DONE) end = second;
+                    setFolderIcon(folder, "text:" + t.substring(0, end));
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        dialog.setOnShowListener(d -> {
+            input.requestFocus();
+            getSystemService(InputMethodManager.class).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+        });
+        dialog.show();
+    }
+
+    // Android's own file picker: no storage permission needed.
+    private void pickFolderIconImage(HomeLayout.Folder folder) {
+        pendingFolderImage = folder.id;
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*");
+        try {
+            startActivityForResult(i, REQ_FOLDER_IMAGE);
+        } catch (ActivityNotFoundException e) {
+            pendingFolderImage = null;
+        }
+    }
+
+    // Shrinks the picture to icon size and keeps it inside the layout file, so it
+    // goes into backups too.
+    private void applyFolderImage(android.net.Uri uri) {
+        String id = pendingFolderImage;
+        pendingFolderImage = null;
+        HomeLayout.Folder folder = null;
+        for (HomeLayout.Item it : layout.items()) {
+            HomeLayout.Folder f = layout.folder(it);
+            if (f != null && f.id.equals(id)) folder = f;
+        }
+        if (folder == null) return;
+        try {
+            android.graphics.Bitmap src = android.graphics.ImageDecoder.decodeBitmap(
+                    android.graphics.ImageDecoder.createSource(getContentResolver(), uri),
+                    (decoder, info, s) -> {
+                        int w = info.getSize().getWidth(), h = info.getSize().getHeight();
+                        float scale = 256f / Math.min(w, h);
+                        if (scale < 1f) decoder.setTargetSize(Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale)));
+                        decoder.setAllocator(android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE);
+                    });
+            android.graphics.Bitmap square = repo.theme().image(src); // also crops to a square
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            square.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+            setFolderIcon(folder, "image:" + android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP));
+        } catch (java.io.IOException | RuntimeException e) {
+            Toast.makeText(this, R.string.folder_icon_image_failed, Toast.LENGTH_SHORT).show();
+        }
     }
 
     /* ---------- drag and drop ---------- */
@@ -872,6 +1048,14 @@ public class HomeActivity extends Activity
         if (st.folder != null) folders.grid().setLayoutTransition(reorderTransition());
         if (!st.fromDrawer) st.view.setVisibility(View.INVISIBLE);
         dropRemove.setVisibility(st.item != null || st.folder != null ? View.VISIBLE : View.GONE);
+        // A widget can only be moved or removed, so its trash can is a big, easy target.
+        boolean widget = st.item != null && HomeLayout.isWidgetKey(st.item.key);
+        dropRemoveScale = widget ? 1.8f : 1f;
+        dropRemove.setScaleX(dropRemoveScale);
+        dropRemove.setScaleY(dropRemoveScale);
+        ViewGroup.LayoutParams barLp = dropBar.getLayoutParams();
+        barLp.height = Math.round(dp(widget ? 120 : 72));
+        dropBar.setLayoutParams(barLp);
         dropInfo.setVisibility(st.app != null ? View.VISIBLE : View.GONE);
         dropUninstall.setVisibility(st.app != null && repo.canUninstall(st.app) ? View.VISIBLE : View.GONE);
         dropBar.setVisibility(View.VISIBLE);
@@ -1006,7 +1190,8 @@ public class HomeActivity extends Activity
     private void hoverTarget(ImageView target, boolean over) {
         int tint = !over ? 0xFFE6F0FF : target == dropUninstall ? 0xFFEF4444 : prefs.accent();
         target.setImageTintList(ColorStateList.valueOf(tint));
-        target.animate().scaleX(over ? 1.3f : 1f).scaleY(over ? 1.3f : 1f).setDuration(120).start();
+        float base = target == dropRemove ? dropRemoveScale : 1f;
+        target.animate().scaleX(base * (over ? 1.3f : 1f)).scaleY(base * (over ? 1.3f : 1f)).setDuration(120).start();
         if (over) target.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
     }
 
@@ -1352,7 +1537,7 @@ public class HomeActivity extends Activity
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add(0, 1, 0, R.string.open_folder);
         if (!locked) {
-            menu.getMenu().add(0, 2, 1, R.string.rename_folder);
+            menu.getMenu().add(0, 5, 1, R.string.change_icon);
             menu.getMenu().add(0, 3, 2, R.string.ungroup);
             menu.getMenu().add(0, 4, 3, HomeLayout.DOCK.equals(item.container)
                     ? R.string.remove_from_dock : R.string.remove_from_home);
@@ -1360,7 +1545,7 @@ public class HomeActivity extends Activity
         menu.setOnMenuItemClickListener(mi -> {
             switch (mi.getItemId()) {
                 case 1: folders.show(folder, anchor); return true;
-                case 2: folders.rename(folder); return true;
+                case 5: changeFolderIcon(folder); return true;
                 case 3: {
                     int lost = layout.ungroup(item);
                     refreshHome();
@@ -1550,6 +1735,11 @@ public class HomeActivity extends Activity
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_WIDGET_RECONFIGURE) return; // the widget updates itself
+        if (requestCode == REQ_FOLDER_IMAGE) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) applyFolderImage(data.getData());
+            else pendingFolderImage = null;
+            return;
+        }
         if (requestCode != REQ_WIDGET_BIND && requestCode != REQ_WIDGET_CONFIGURE) return;
         int id = pendingWidgetId;
         if (id < 0) return;
@@ -1860,6 +2050,7 @@ public class HomeActivity extends Activity
                 .withEndAction(() -> { if (drawerOpen) homeContent.setVisibility(View.INVISIBLE); })
                 .start();
         drawerList.scrollToPosition(0);
+        search.setVisibility(prefs.searchOnPull() ? View.GONE : View.VISIBLE);
         applySystemBars();
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT, closeDrawerOnBack);
@@ -1881,6 +2072,17 @@ public class HomeActivity extends Activity
                     search.setText("");
                 })
                 .start();
+    }
+
+    /** Slides the drawer's search bar in and puts the keyboard up. */
+    private void revealSearch() {
+        search.setVisibility(View.VISIBLE);
+        search.setAlpha(0f);
+        search.setTranslationY(-dp(24));
+        search.animate().alpha(1f).translationY(0).setDuration(160).withEndAction(null).start();
+        search.requestFocus();
+        search.post(() -> getSystemService(InputMethodManager.class)
+                .showSoftInput(search, InputMethodManager.SHOW_IMPLICIT));
     }
 
     // Instantly, mid-drag: the home screen must be visible to receive the drop.

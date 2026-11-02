@@ -292,6 +292,8 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     private void buildDrawer() {
         stepper(R.string.drawer_columns, prefs.drawerColumns(), 3, 7, prefs::setDrawerColumns);
         choice(R.string.drawer_icon_size, sizes(), prefs.drawerIconSize(), prefs::setDrawerIconSize);
+        choice(R.string.search_bar, new int[] {R.string.search_always, R.string.search_pull},
+                prefs.searchOnPull() ? 1 : 0, i -> prefs.setSearchOnPull(i == 1));
         toggle(R.string.az_scroller, prefs.azScroller(), prefs::setAzScroller);
         toggle(R.string.most_used_setting, prefs.mostUsed(), prefs::setMostUsed);
         header(R.string.section_apps);

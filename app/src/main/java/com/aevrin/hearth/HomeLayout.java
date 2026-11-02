@@ -72,6 +72,8 @@ final class HomeLayout {
         final String id;
         String name;
         final List<String> apps = new ArrayList<>();
+        /** Null shows mini icons of the contents; else "app:<key>", "text:<chars>" or "image:<base64 PNG>". */
+        String icon;
         Folder(String id, String name) { this.id = id; this.name = name; }
     }
 
@@ -113,6 +115,8 @@ final class HomeLayout {
                     for (int i = 0; i < fs.length(); i++) {
                         JSONObject f = fs.getJSONObject(i);
                         Folder folder = new Folder(f.getString("id"), f.optString("name", ""));
+                        String icon = f.optString("icon", "");
+                        folder.icon = icon.isEmpty() ? null : icon;
                         JSONArray apps = f.optJSONArray("apps");
                         if (apps != null) for (int j = 0; j < apps.length(); j++) folder.apps.add(apps.getString(j));
                         if (!folder.apps.isEmpty()) layout.folders.put(folder.id, folder);
@@ -550,6 +554,12 @@ final class HomeLayout {
         return false;
     }
 
+    /** Null for mini icons of the contents. */
+    void setFolderIcon(Folder f, String icon) {
+        f.icon = icon;
+        save();
+    }
+
     void renameFolder(Folder f, String name) {
         f.name = name == null ? "" : name.trim();
         save();
@@ -713,7 +723,9 @@ final class HomeLayout {
         }
         JSONArray fs = new JSONArray();
         for (Folder f : folders.values()) {
-            fs.put(new JSONObject().put("id", f.id).put("name", f.name).put("apps", new JSONArray(f.apps)));
+            JSONObject fo = new JSONObject().put("id", f.id).put("name", f.name).put("apps", new JSONArray(f.apps));
+            if (f.icon != null) fo.put("icon", f.icon);
+            fs.put(fo);
         }
         return new JSONObject()
                 .put("version", VERSION)

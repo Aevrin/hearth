@@ -45,6 +45,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - **Folders:** tap to open as a compact panel above the folder, sized to fit: 2×1 or 2×2 for up
     to four apps, then 3×3, 4×4 and wider where the screen allows; very big folders scroll. Tap
     the name to rename it.
+    Long-press a folder for Open, **Change icon** (show the apps inside, use any app's icon, a
+    letter or emoji in the accent, or a picture from your phone, all cut to the icon shape),
+    Ungroup and Remove.
     Long-press inside for Move to home screen, Remove from folder, Rename, Change icon, App info,
     Uninstall; keep holding and move to **reorder** (the others shift aside as you drag), or drag
     outside the panel to take the app out and drop it anywhere. A folder left with one app turns
@@ -79,6 +82,8 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - Alphabetical grid with a search box and an **A–Z strip** down the side. Matches ignore case
     and accents, and names that *start* with your search come first. Go opens the top match.
   - A **Most used** row at the top (optional), learned on the phone only.
+  - Optional **pull-to-search**: the drawer opens without its search bar; pull down at the top
+    of the list to reveal it (pull again to close the drawer).
   - Long-press an app for its menu (shortcuts, Add to home/dock, Rename, Change icon, Hide,
     App info, Uninstall). Keep holding and move your finger instead to pick it up and drop it on
     the home screen, dock or a folder.
