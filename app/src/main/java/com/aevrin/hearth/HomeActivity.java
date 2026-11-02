@@ -645,7 +645,8 @@ public class HomeActivity extends Activity
         View root = findViewById(R.id.root);
         int w = root.getWidth(), h = root.getHeight();
         if (w == 0 || h == 0) return;
-        int zoneH = Math.min(Math.round(dp(200)), h / 3), zoneW = Math.round(dp(24));
+        int zoneH = Math.min(Math.round(dp(200)), h / 3);
+        int zoneW = Math.round(dp(Prefs.ZONE_WIDTHS[prefs.sidebarZone()]));
         int top;
         switch (prefs.sidebarHandlePos()) {
             case Prefs.HANDLE_TOP: top = Math.round(h * 0.18f); break;
@@ -660,8 +661,8 @@ public class HomeActivity extends Activity
         if (right) exclude.add(new Rect(edgeRight));
         root.setSystemGestureExclusionRects(exclude);
         boolean shown = prefs.sidebarHandleShown();
-        placeHandle(handleLeft, left && shown, top + (zoneH - Math.round(dp(56))) / 2);
-        placeHandle(handleRight, right && shown, top + (zoneH - Math.round(dp(56))) / 2);
+        placeHandle(handleLeft, left && shown, top + (zoneH - Math.round(dp(80))) / 2);
+        placeHandle(handleRight, right && shown, top + (zoneH - Math.round(dp(80))) / 2);
         if (sidebar.isOpen() && !prefs.sidebar(Sidebar.key(sidebar.side()))) sidebar.closeNow();
     }
 
@@ -670,9 +671,11 @@ public class HomeActivity extends Activity
         if (!show) return;
         GradientDrawable d = new GradientDrawable();
         d.setColor(Accent.withAlpha(prefs.accent(), 140));
-        d.setCornerRadius(dp(2));
+        d.setCornerRadius(dp(3));
         handle.setBackground(d);
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) handle.getLayoutParams();
+        lp.width = Math.round(dp(6));
+        lp.height = Math.round(dp(80));
         lp.topMargin = top;
         handle.setLayoutParams(lp);
     }
@@ -709,6 +712,10 @@ public class HomeActivity extends Activity
                     return false;
                 }
                 if (edgeSide == Sidebar.NONE) return false;
+                if (pendingDrag != null && !edgeDragging) {
+                    edgeSide = Sidebar.NONE; // an icon was long-pressed in the zone: it's an icon drag
+                    return false;
+                }
                 float in = edgeSide == Sidebar.LEFT ? x - edgeStartX : edgeStartX - x;
                 if (!edgeDragging) {
                     if (in < slop) return false;

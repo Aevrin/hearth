@@ -261,6 +261,10 @@
     <string name="pos_top">Top</string>
     <string name="pos_middle">Middle</string>
     <string name="pos_bottom">Bottom</string>
+    <string name="sidebar_zone">Swipe zone width</string>
+    <string name="zone_narrow">Narrow</string>
+    <string name="zone_wide">Wide</string>
+    <string name="zone_ultra">Ultra wide</string>
     <string name="sidebar_handle_shown">Show a handle there</string>
     <string name="sidebar_note">Swipe in from the edge where the handle is; the rest of the edge still works as Back. Android only lets apps take over 200dp of each edge from the Back gesture. You can also open a sidebar with a gesture. Add entries with + at its bottom; long-press an entry to move or remove it.</string>
     <string name="sidebar_add">Add to sidebar</string>

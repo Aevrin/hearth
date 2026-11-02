@@ -336,6 +336,8 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     private void buildSidebars() {
         choice(R.string.sidebar_handle_pos, new int[] {R.string.pos_top, R.string.pos_middle, R.string.pos_bottom},
                 prefs.sidebarHandlePos(), prefs::setSidebarHandlePos);
+        choice(R.string.sidebar_zone, new int[] {R.string.zone_narrow, R.string.zone_wide, R.string.zone_ultra},
+                prefs.sidebarZone(), prefs::setSidebarZone);
         toggle(R.string.sidebar_handle_shown, prefs.sidebarHandleShown(), prefs::setSidebarHandleShown);
         note(R.string.sidebar_note);
         sidebarSection(Prefs.SIDEBAR_LEFT, R.string.sidebar_left_on);
