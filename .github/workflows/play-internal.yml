@@ -1,11 +1,13 @@
 name: Play internal testing
 
-# Builds a signed .aab on every push to main and publishes it to the Play
-# internal testing track once the repo variable PLAY_PUBLISH is "true".
+# Builds a signed .aab on every push to main and publishes it to Play once the
+# repo variable PLAY_PUBLISH is "true": to the tracks in PLAY_TRACKS
+# (comma-separated, no spaces), by default internal and closed testing ("alpha").
 #
 # Secrets:   UPLOAD_KEYSTORE_B64, UPLOAD_STORE_PASSWORD, UPLOAD_KEY_ALIAS,
 #            UPLOAD_KEY_PASSWORD, PLAY_SERVICE_ACCOUNT_JSON
 # Variables: PLAY_PUBLISH ("true" after the first manual upload),
+#            PLAY_TRACKS (optional, default "internal,alpha"),
 #            VERSION_CODE_OFFSET (optional, bump if versionCode ever collides)
 #
 # Forks: without these secrets the build step fails at signing, by design.
@@ -74,14 +76,14 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-      - name: Publish to internal testing
+      - name: Publish to Play testing tracks
         if: vars.PLAY_PUBLISH == 'true'
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: ${{ env.PACKAGE_NAME }}
           releaseFiles: ${{ env.AAB_PATH }}
-          tracks: internal
+          tracks: ${{ vars.PLAY_TRACKS || 'internal,alpha' }}
           status: completed
 
       - name: Remove keystore
