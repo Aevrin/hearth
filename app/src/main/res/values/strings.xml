@@ -219,11 +219,12 @@
     <string name="widget_width">Width</string>
     <string name="widget_height">Height</string>
     <string name="section_system_bars">System bars</string>
-    <string name="status_bar">Status bar</string>
-    <string name="nav_bar">Navigation bar (bottom buttons)</string>
-    <string name="bar_clear">See-through</string>
-    <string name="bar_background">Theme background</string>
-    <string name="bar_accent">Accent</string>
+    <string name="status_bar">Status bar icons (clock, battery, signal)</string>
+    <string name="nav_bar">Navigation bar icons (back, home, recents)</string>
+    <string name="icons_auto">Auto</string>
+    <string name="icons_light">Light</string>
+    <string name="icons_dark">Dark</string>
+    <string name="system_bars_note">Android only lets apps choose light or dark system icons, not colours. Auto goes by whether your wallpaper suits dark text, and uses light icons over a dark app drawer.</string>
     <string name="widget_resize_hint">Drag the handles to resize. Tap outside to finish.</string>
     <string name="subgrid">Subgrid positioning (place icons and widgets on half cells)</string>
     <string name="widget_resize_no_room">Not enough free space around it for that size. Move things out of the way first.</string>

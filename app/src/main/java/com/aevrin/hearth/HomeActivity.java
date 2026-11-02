@@ -109,8 +109,9 @@ public class HomeActivity extends Activity
     private LinearLayout dockDots;
     private ImageView handle;
     private TextView emptyHint;
-    private View statusScrim, navScrim;
-    private Insets barInsets = Insets.NONE;
+    private final WallpaperManager.OnColorsChangedListener wallpaperColors = (colors, which) -> {
+        if ((which & WallpaperManager.FLAG_SYSTEM) != 0) applySystemBars();
+    };
     private View dropBar;
     private TextView dropRemove, dropInfo, dropUninstall;
     private View drawer;
@@ -179,8 +180,6 @@ public class HomeActivity extends Activity
         dockDots = findViewById(R.id.dock_dots);
         handle = findViewById(R.id.drawer_handle);
         emptyHint = findViewById(R.id.empty_hint);
-        statusScrim = findViewById(R.id.status_scrim);
-        navScrim = findViewById(R.id.nav_scrim);
         dropBar = findViewById(R.id.drop_bar);
         dropRemove = findViewById(R.id.drop_remove);
         dropInfo = findViewById(R.id.drop_info);
@@ -201,10 +200,6 @@ public class HomeActivity extends Activity
             Insets ime = insets.getInsets(WindowInsets.Type.ime());
             homeContent.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             drawer.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
-            Insets status = insets.getInsets(WindowInsets.Type.statusBars());
-            Insets nav = insets.getInsets(WindowInsets.Type.navigationBars());
-            barInsets = Insets.of(nav.left, status.top, nav.right, nav.bottom);
-            applySystemBars();
             return WindowInsets.CONSUMED;
         });
 
@@ -291,6 +286,7 @@ public class HomeActivity extends Activity
     @Override
     protected void onStart() {
         super.onStart();
+        wallpaper.addOnColorsChangedListener(wallpaperColors, handler);
         try {
             widgetHost.startListening(); // widgets update while Hearth is visible
         } catch (RuntimeException ignored) {
@@ -306,6 +302,7 @@ public class HomeActivity extends Activity
 
     @Override
     protected void onStop() {
+        wallpaper.removeOnColorsChangedListener(wallpaperColors);
         try {
             widgetHost.stopListening();
         } catch (RuntimeException ignored) { }
@@ -539,59 +536,34 @@ public class HomeActivity extends Activity
     }
 
     /**
-     * Colours behind the status and navigation bars: see-through (the default),
-     * the theme's background, or the accent. The bar icons switch to dark on a
-     * light colour so they stay readable.
+     * Light or dark status bar and navigation bar icons. Android doesn't let apps
+     * colour them; Auto follows the wallpaper (and goes light over a dark drawer).
      */
     private void applySystemBars() {
-        Accent a = prefs.accentStyle();
-        int status = prefs.statusBar(), nav = prefs.navBar();
-        boolean lightStatus = paintBar(statusScrim, status, a, barInsets.top, true, false);
-        // The navigation bar sits at the bottom, or on a side in landscape with buttons.
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) navScrim.getLayoutParams();
-        boolean side = barInsets.bottom == 0 && (barInsets.left > 0 || barInsets.right > 0);
-        if (side) {
-            lp.gravity = barInsets.left > 0 ? Gravity.START : Gravity.END;
-            lp.width = Math.max(barInsets.left, barInsets.right);
-            lp.height = ViewGroup.LayoutParams.MATCH_PARENT;
-        } else {
-            lp.gravity = Gravity.BOTTOM;
-            lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
-            lp.height = barInsets.bottom;
-        }
-        navScrim.setLayoutParams(lp);
-        boolean lightNav = paintBar(navScrim, nav, a, side ? 1 : barInsets.bottom, false, side);
-        int flags = (lightStatus ? android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS : 0)
-                | (lightNav ? android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS : 0);
+        boolean wallpaperLight = false;
+        try {
+            android.app.WallpaperColors c = wallpaper.getWallpaperColors(WallpaperManager.FLAG_SYSTEM);
+            wallpaperLight = c != null && (c.getColorHints() & android.app.WallpaperColors.HINT_SUPPORTS_DARK_TEXT) != 0;
+        } catch (RuntimeException ignored) { }
+        boolean overDarkDrawer = drawerOpen && prefs.drawerOpacity() >= 50;
+        boolean autoDark = wallpaperLight && !overDarkDrawer;
+        boolean darkStatus = shade(prefs.statusIcons(), autoDark);
+        boolean darkNav = shade(prefs.navIcons(), autoDark);
+        // "LIGHT_*_BARS" in Android's terms means a light bar, i.e. dark icons.
+        int flags = (darkStatus ? android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS : 0)
+                | (darkNav ? android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS : 0);
         getWindow().getInsetsController().setSystemBarsAppearance(flags,
                 android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
                         | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
     }
 
-    /** Returns true when the bar is light enough to need dark icons. */
-    private boolean paintBar(View scrim, int style, Accent a, int size, boolean top, boolean side) {
-        if (style == Prefs.BAR_CLEAR || size <= 0) {
-            scrim.setVisibility(View.GONE);
-            return false;
+    /** True for dark icons. */
+    private static boolean shade(int mode, boolean autoDark) {
+        switch (mode) {
+            case Prefs.ICONS_LIGHT: return false;
+            case Prefs.ICONS_DARK: return true;
+            default: return autoDark;
         }
-        if (top) {
-            ViewGroup.LayoutParams lp = scrim.getLayoutParams();
-            lp.height = size;
-            scrim.setLayoutParams(lp);
-        }
-        int solid;
-        if (style == Prefs.BAR_ACCENT) {
-            GradientDrawable d = a.drawable();
-            if (a.gradient) d.setOrientation(side ? GradientDrawable.Orientation.TOP_BOTTOM
-                    : GradientDrawable.Orientation.LEFT_RIGHT); // along the bar
-            scrim.setBackground(d);
-            solid = a.solid();
-        } else {
-            solid = Prefs.background(92);
-            scrim.setBackgroundColor(solid);
-        }
-        scrim.setVisibility(View.VISIBLE);
-        return android.graphics.Color.luminance(solid) > 0.5f && android.graphics.Color.alpha(solid) > 128;
     }
 
     private GradientDrawable roundedBar(Accent a) {
@@ -1813,6 +1785,7 @@ public class HomeActivity extends Activity
                 .withEndAction(() -> { if (drawerOpen) homeContent.setVisibility(View.INVISIBLE); })
                 .start();
         drawerList.scrollToPosition(0);
+        applySystemBars();
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT, closeDrawerOnBack);
     }
@@ -1820,6 +1793,7 @@ public class HomeActivity extends Activity
     private void closeDrawer() {
         if (!drawerOpen) return;
         drawerOpen = false;
+        applySystemBars();
         getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(closeDrawerOnBack);
         getSystemService(InputMethodManager.class).hideSoftInputFromWindow(search.getWindowToken(), 0);
         search.clearFocus();
@@ -1837,6 +1811,7 @@ public class HomeActivity extends Activity
     // Instantly, mid-drag: the home screen must be visible to receive the drop.
     private void hideDrawerForDrag() {
         drawerOpen = false;
+        applySystemBars();
         getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(closeDrawerOnBack);
         getSystemService(InputMethodManager.class).hideSoftInputFromWindow(search.getWindowToken(), 0);
         drawer.animate().cancel();

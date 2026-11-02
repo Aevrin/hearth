@@ -216,9 +216,10 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
                 });
         if (a.gradient) gradientControls(a); else swatches();
         header(R.string.section_system_bars);
-        int[] bars = {R.string.bar_clear, R.string.bar_background, R.string.bar_accent};
-        choice(R.string.status_bar, bars, prefs.statusBar(), prefs::setStatusBar);
-        choice(R.string.nav_bar, bars, prefs.navBar(), prefs::setNavBar);
+        int[] shades = {R.string.icons_auto, R.string.icons_light, R.string.icons_dark};
+        choice(R.string.status_bar, shades, prefs.statusIcons(), prefs::setStatusIcons);
+        choice(R.string.nav_bar, shades, prefs.navIcons(), prefs::setNavIcons);
+        note(R.string.system_bars_note);
         header(R.string.section_backgrounds);
         slider(R.string.drawer_opacity, prefs.drawerOpacity(), prefs::setDrawerOpacity);
         slider(R.string.dock_opacity, prefs.dockOpacity(), prefs::setDockOpacity);

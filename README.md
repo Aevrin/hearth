@@ -85,9 +85,10 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - **Appearance:** accent as a **solid colour** (presets or any colour) or a **gradient** (presets,
     or pick start and end, swap them, choose diagonal / horizontal / vertical). The clock, headings,
     accent labels, themed and duotone icons, page dots and drop highlights use the full gradient;
-    single-colour things like switches use the midpoint. **System bars:** the status bar and the
-    navigation bar (bottom buttons) can each be see-through (default), the theme background, or
-    the accent; their icons turn dark on light colours. Drawer and dock background opacity.
+    single-colour things like switches use the midpoint. **System bar icons:** the status bar (clock,
+    battery, signal) and navigation bar (back, home, recents) icons can each be Auto, Light or
+    Dark. Android doesn't let apps colour them; Auto follows the wallpaper and goes light over a
+    dark drawer. Drawer and dock background opacity.
   - **Labels:** on/off for home and drawer, size, shadow, two lines, and **text in accent colour**
     (labels everywhere, folder names, the search box and hints).
   - **Icons:** generated on the phone from each app's own icon, with a live preview.
