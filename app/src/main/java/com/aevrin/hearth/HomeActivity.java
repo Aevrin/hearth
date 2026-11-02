@@ -1044,8 +1044,8 @@ public class HomeActivity extends Activity
                 && layout.items().contains(st.item)) {
             HomeLayout.Item w = st.item;
             afterLayout(grid, () -> {
-                View v = findItemView(w);
-                if (v != null) widgetReleased(w, v);
+                View wv = findItemView(w);
+                if (wv != null) widgetReleased(w, wv);
             });
         }
         folders.refresh(); // shows the new order, or closes a folder that dissolved
