@@ -87,12 +87,26 @@ final class Prefs {
     static final String GESTURE_DOWN = "gesture_down";
     static final String GESTURE_LEFT = "gesture_left";
     static final String GESTURE_RIGHT = "gesture_right";
+    static final String GESTURE_DOUBLE_TAP = "gesture_double_tap";
+    static final String GESTURE_TWO_UP = "gesture_two_up";
+    static final String GESTURE_TWO_DOWN = "gesture_two_down";
+    static final String[] ALL_GESTURES = {GESTURE_UP, GESTURE_DOWN, GESTURE_LEFT, GESTURE_RIGHT,
+            GESTURE_DOUBLE_TAP, GESTURE_TWO_UP, GESTURE_TWO_DOWN};
+    static final String SIDEBAR_LEFT = "sidebar_left";
+    static final String SIDEBAR_RIGHT = "sidebar_right";
+    static final String SIDEBAR_LEFT_ITEMS = "sidebar_left_items";
+    static final String SIDEBAR_RIGHT_ITEMS = "sidebar_right_items";
+    static final String SIDEBAR_HANDLE_POS = "sidebar_handle_pos";
+    static final String SIDEBAR_HANDLE_SHOWN = "sidebar_handle_shown";
+    static final int HANDLE_TOP = 0, HANDLE_MIDDLE = 1, HANDLE_BOTTOM = 2;
 
     /** Gesture actions. Also "app:<key>" to open a particular app. */
     static final String G_NONE = "none", G_DRAWER = "drawer", G_SEARCH = "search",
-            G_NOTIFICATIONS = "notifications", G_QUICK_SETTINGS = "quick_settings", G_SETTINGS = "settings";
+            G_NOTIFICATIONS = "notifications", G_QUICK_SETTINGS = "quick_settings", G_SETTINGS = "settings",
+            G_SIDEBAR_LEFT = "open_sidebar_left", G_SIDEBAR_RIGHT = "open_sidebar_right";
     static final String G_APP_PREFIX = "app:";
-    static final String[] GESTURE_ACTIONS = {G_NONE, G_DRAWER, G_SEARCH, G_NOTIFICATIONS, G_QUICK_SETTINGS, G_SETTINGS};
+    static final String[] GESTURE_ACTIONS = {G_NONE, G_DRAWER, G_SEARCH, G_NOTIFICATIONS, G_QUICK_SETTINGS, G_SETTINGS,
+            G_SIDEBAR_LEFT, G_SIDEBAR_RIGHT};
     private static final String LAUNCH_COUNTS = "launch_counts"; // not backed up: usage, not settings
     private static final String HOME_PROMPT_SHOWN = "home_prompt_shown"; // not backed up
 
@@ -229,9 +243,46 @@ final class Prefs {
     void setGesture(String which, String action) { sp.edit().putString(which, action).apply(); }
 
     private static boolean validGesture(String a) {
-        if (a.startsWith(G_APP_PREFIX)) return a.length() > G_APP_PREFIX.length();
+        if (Targets.isTarget(a)) return a.indexOf(':') < a.length() - 1;
         for (String g : GESTURE_ACTIONS) if (g.equals(a)) return true;
         return false;
+    }
+
+    /* ---------- sidebars ---------- */
+
+    boolean sidebar(String side) { return sp.getBoolean(side, false); }
+    void setSidebar(String side, boolean v) { sp.edit().putBoolean(side, v).apply(); }
+    int sidebarHandlePos() { return clamp(sp.getInt(SIDEBAR_HANDLE_POS, HANDLE_MIDDLE), HANDLE_TOP, HANDLE_BOTTOM); }
+    void setSidebarHandlePos(int v) { sp.edit().putInt(SIDEBAR_HANDLE_POS, v).apply(); }
+    boolean sidebarHandleShown() { return sp.getBoolean(SIDEBAR_HANDLE_SHOWN, true); }
+    void setSidebarHandleShown(boolean v) { sp.edit().putBoolean(SIDEBAR_HANDLE_SHOWN, v).apply(); }
+
+    private static String itemsKey(String side) {
+        return SIDEBAR_RIGHT.equals(side) ? SIDEBAR_RIGHT_ITEMS : SIDEBAR_LEFT_ITEMS;
+    }
+
+    /** A sidebar's entries, in order: targets (see Targets). */
+    java.util.List<String> sidebarItems(String side) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(sp.getString(itemsKey(side), "[]"));
+            for (int i = 0; i < a.length(); i++) if (Targets.isTarget(a.optString(i))) out.add(a.optString(i));
+        } catch (JSONException ignored) { }
+        return out;
+    }
+
+    void setSidebarItems(String side, java.util.List<String> items) {
+        sp.edit().putString(itemsKey(side), new org.json.JSONArray(items).toString()).apply();
+    }
+
+    /** Shortcut keys used by gestures and sidebars (kept pinned alongside the home screen's). */
+    Set<String> pinnedTargets() {
+        Set<String> s = new HashSet<>();
+        for (String g : ALL_GESTURES) if (Shortcuts.isShortcutKey(gesture(g))) s.add(gesture(g));
+        for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) {
+            for (String t : sidebarItems(side)) if (Shortcuts.isShortcutKey(t)) s.add(t);
+        }
+        return s;
     }
     void setMostUsed(boolean v) { sp.edit().putBoolean(MOST_USED, v).apply(); }
 
@@ -411,7 +462,13 @@ final class Prefs {
         o.put(SEARCH_ON_PULL, searchOnPull());
         o.put(STATUS_ICONS, statusIcons());
         o.put(NAV_ICONS, navIcons());
-        for (String g : new String[] {GESTURE_UP, GESTURE_DOWN, GESTURE_LEFT, GESTURE_RIGHT}) o.put(g, gesture(g));
+        for (String g : ALL_GESTURES) o.put(g, gesture(g));
+        o.put(SIDEBAR_LEFT, sidebar(SIDEBAR_LEFT));
+        o.put(SIDEBAR_RIGHT, sidebar(SIDEBAR_RIGHT));
+        o.put(SIDEBAR_HANDLE_POS, sidebarHandlePos());
+        o.put(SIDEBAR_HANDLE_SHOWN, sidebarHandleShown());
+        o.put(SIDEBAR_LEFT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_LEFT)));
+        o.put(SIDEBAR_RIGHT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_RIGHT)));
         return o;
     }
 
@@ -424,7 +481,7 @@ final class Prefs {
                 case DRAWER_OPACITY: case DOCK_OPACITY: case COLUMNS: case ROWS: case PAGES:
                 case DOCK_SLOTS: case DRAWER_COLUMNS: case ICON_SIZE:
                 case DOCK_ICON_SIZE: case DRAWER_ICON_SIZE: case LABEL_SIZE: case DEFAULT_PAGE: case DOCK_PAGES:
-                case ACCENT_DIRECTION: case STATUS_ICONS: case NAV_ICONS:
+                case ACCENT_DIRECTION: case STATUS_ICONS: case NAV_ICONS: case SIDEBAR_HANDLE_POS:
                     e.putInt(k, o.getInt(k));
                     break;
                 case SHOW_CLOCK: case SHOW_DATE: case SHOW_SECONDS: case SHOW_DOCK: case HOME_LABELS:
@@ -432,9 +489,17 @@ final class Prefs {
                 case LABEL_ACCENT: case LABEL_SHADOW: case LABEL_TWO_LINES: case LOCK_LAYOUT:
                 case SCROLL_WALLPAPER: case ALLOW_ROTATION: case AZ_SCROLLER: case MOST_USED:
                 case ACCENT_GRADIENT: case SUBGRID: case SEARCH_ON_PULL:
+                case SIDEBAR_LEFT: case SIDEBAR_RIGHT: case SIDEBAR_HANDLE_SHOWN:
                     e.putBoolean(k, o.getBoolean(k));
                     break;
-                case GESTURE_UP: case GESTURE_DOWN: case GESTURE_LEFT: case GESTURE_RIGHT: {
+                case SIDEBAR_LEFT_ITEMS: case SIDEBAR_RIGHT_ITEMS: {
+                    org.json.JSONArray a = o.getJSONArray(k), keep = new org.json.JSONArray();
+                    for (int i = 0; i < a.length(); i++) if (Targets.isTarget(a.optString(i))) keep.put(a.optString(i));
+                    e.putString(k, keep.toString());
+                    break;
+                }
+                case GESTURE_UP: case GESTURE_DOWN: case GESTURE_LEFT: case GESTURE_RIGHT:
+                case GESTURE_DOUBLE_TAP: case GESTURE_TWO_UP: case GESTURE_TWO_DOWN: {
                     String g = o.getString(k);
                     if (validGesture(g)) e.putString(k, g);
                     break;

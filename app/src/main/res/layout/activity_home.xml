@@ -154,6 +154,69 @@
         </LinearLayout>
     </FrameLayout>
 
+    <!-- Sidebar handles: faint marks showing where to swipe in from the edge. -->
+    <View
+        android:id="@+id/handle_left"
+        android:layout_width="4dp"
+        android:layout_height="56dp"
+        android:layout_gravity="start|top"
+        android:visibility="gone" />
+
+    <View
+        android:id="@+id/handle_right"
+        android:layout_width="4dp"
+        android:layout_height="56dp"
+        android:layout_gravity="end|top"
+        android:visibility="gone" />
+
+    <!-- Sidebar: a column of apps, activities and shortcuts dragged in from either edge. -->
+    <FrameLayout
+        android:id="@+id/sidebar_layer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/sidebar_scrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:background="#99000000" />
+
+        <LinearLayout
+            android:id="@+id/sidebar_panel"
+            android:layout_width="104dp"
+            android:layout_height="match_parent"
+            android:clickable="true"
+            android:elevation="8dp"
+            android:orientation="vertical">
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/sidebar_list"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_horizontal"
+                    android:orientation="vertical"
+                    android:paddingTop="8dp" />
+            </ScrollView>
+
+            <ImageView
+                android:id="@+id/sidebar_add"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:background="?android:attr/selectableItemBackground"
+                android:contentDescription="@string/sidebar_add"
+                android:scaleType="center"
+                android:src="@drawable/ic_add" />
+        </LinearLayout>
+    </FrameLayout>
+
     <!-- App drawer: search on top, alphabetical grid below. Background opacity is a setting. -->
     <LinearLayout
         android:id="@+id/drawer"

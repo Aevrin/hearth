@@ -59,9 +59,17 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - Tap the clock to open your alarms.
 - **Gestures** on the home screen, each configurable (Settings → Gestures): swipe **up** opens the
   drawer, swipe **down** pulls down the notification shade; **left / right** do nothing by default,
-  so they just change page. Sideways gestures only run when there's no page that way. Choices:
-  nothing, app drawer, search apps (drawer with keyboard), notifications, quick settings, Hearth
-  settings, or open any app.
+  so they just change page (they only run when there's no page that way); **double-tap** on empty
+  space and **two-finger swipe up / down** are off by default. Choices: nothing, app drawer, search
+  apps, notifications, quick settings, Hearth settings, open the left or right sidebar, or open
+  **any app, any activity inside an app** (a particular settings screen, say) **or any app
+  shortcut**, Nova-style. Gestures only look at touches already on the home screen, so they cost
+  no battery.
+- **Sidebars** (Settings → Sidebars), left, right or both: swipe in from the edge where the faint
+  handle is and a column of apps, activities and shortcuts follows your finger out. Add with +,
+  long-press to reorder or remove; tap outside, swipe it back or press Back to close. The handle
+  zone is up to 200dp of the edge (top, middle or bottom), the most Android lets an app take from
+  the Back gesture; the rest of the edge is still Back.
 - **Widgets:** long-press empty space → **Widgets** for every installed widget, grouped by app with
   previews, sizes and a search box. Hearth places it in the first free space big enough (on the
   current page first), running the widget's own setup screen if it has one. The first time you add
@@ -122,7 +130,6 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 ### Roadmap / ideas
 
 - Notification dots; maybe icon packs.
-- More gestures (double-tap, two-finger swipes).
 - **A web page as a home screen:** a page of the home screen (or its own screen) that shows a
   chosen web page, such as a self-hosted dashboard. This needs the internet permission, so it
   would be opt-in, possibly as a separate build.

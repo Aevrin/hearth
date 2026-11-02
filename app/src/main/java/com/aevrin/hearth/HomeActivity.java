@@ -75,7 +75,7 @@ import java.util.Map;
  * the others along. Long-press without moving for a menu.
  */
 public class HomeActivity extends Activity
-        implements AppRepository.Listener, DrawerAdapter.Actions, FolderPanel.Host {
+        implements AppRepository.Listener, DrawerAdapter.Actions, FolderPanel.Host, Sidebar.Host {
 
     private static final long EDGE_PAGE_DELAY_MS = 550;
     private static final int MENU_SHORTCUT_BASE = 1000;
@@ -98,6 +98,19 @@ public class HomeActivity extends Activity
     /** Rendered custom folder icons, by folder id + icon + theme. */
     private final Map<String, android.graphics.Bitmap> folderIcons = new HashMap<>();
     private float dropRemoveScale = 1f; // the trash can is bigger while dragging a widget
+
+    // Sidebars: dragged in from an edge zone (exempt from the system Back gesture).
+    private Sidebar sidebar;
+    private View handleLeft, handleRight;
+    private final Rect edgeLeft = new Rect(), edgeRight = new Rect();
+    private int edgeSide = Sidebar.NONE;
+    private boolean edgeDragging;
+    private float edgeStartX;
+    private long edgeStartTime;
+    private float closeStartX;          // swiping an open sidebar back toward its edge
+    // Two-finger swipes.
+    private boolean multiTouch, twoFired;
+    private float twoStartY;
     // Live "make room" preview while hovering to insert.
     private CellLayout previewTarget;
     private int previewX = -1, previewY = -1, previewPage = -1;
@@ -202,6 +215,13 @@ public class HomeActivity extends Activity
 
         folders = new FolderPanel(this, this, findViewById(R.id.folder_overlay), findViewById(R.id.folder_card),
                 findViewById(R.id.folder_title), findViewById(R.id.folder_grid));
+        sidebar = new Sidebar(this, this, findViewById(R.id.sidebar_layer), findViewById(R.id.sidebar_scrim),
+                findViewById(R.id.sidebar_panel), findViewById(R.id.sidebar_list), findViewById(R.id.sidebar_add));
+        handleLeft = findViewById(R.id.handle_left);
+        handleRight = findViewById(R.id.handle_right);
+        findViewById(R.id.root).addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) updateEdges();
+        });
 
         // Edge to edge over the wallpaper: keep content clear of the system bars,
         // and the drawer clear of the keyboard too.
@@ -210,6 +230,7 @@ public class HomeActivity extends Activity
             Insets ime = insets.getInsets(WindowInsets.Type.ime());
             homeContent.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             drawer.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+            sidebar.setInsets(bars.top, bars.bottom);
             return WindowInsets.CONSUMED;
         });
 
@@ -247,9 +268,16 @@ public class HomeActivity extends Activity
         });
 
         gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            // Double-tap on empty space (not on an icon or widget).
+            @Override
+            public boolean onDoubleTap(MotionEvent e) {
+                if (drawerOpen || sidebar.isOpen() || overItem(e.getRawX(), e.getRawY())) return false;
+                return runGesture(prefs.gesture(Prefs.GESTURE_DOUBLE_TAP));
+            }
+
             @Override
             public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
-                if (e1 == null) return false;
+                if (e1 == null || multiTouch || sidebar.isOpen()) return false; // two fingers: see dispatchTouchEvent
                 float dx = e2.getX() - e1.getX();
                 float dy = e2.getY() - e1.getY();
                 if (Math.abs(vx) > Math.abs(vy)) {
@@ -309,6 +337,7 @@ public class HomeActivity extends Activity
     @Override
     protected void onPause() {
         endResize();
+        sidebar.closeNow();
         super.onPause();
     }
 
@@ -364,6 +393,8 @@ public class HomeActivity extends Activity
         super.onNewIntent(intent);
         if (resizeFrame != null) {
             endResize();
+        } else if (sidebar.isOpen()) {
+            sidebar.close();
         } else if (folders.isOpen()) {
             folders.close();
         } else if (drawerOpen) {
@@ -380,6 +411,8 @@ public class HomeActivity extends Activity
             lastTouchY = ev.getRawY();
         }
         if (pendingDrag != null) trackPendingDrag(ev);
+        if (trackSidebarEdge(ev)) return true;
+        trackTwoFingers(ev);
         // No page/drawer swipes over an open folder or while resizing a widget.
         if (!folders.isOpen() && resizeFrame == null) gestures.onTouchEvent(ev);
         return super.dispatchTouchEvent(ev);
@@ -397,6 +430,7 @@ public class HomeActivity extends Activity
         refreshAlpha();
         refreshHome();
         folders.refresh();
+        sidebar.refresh();
     }
 
     /* ---------- FolderPanel.Host ---------- */
@@ -405,7 +439,17 @@ public class HomeActivity extends Activity
     @Override public AppRepository repo() { return repo; }
     @Override public Prefs prefs() { return prefs; }
     @Override public int homeIconPx() { return homeIconPx; }
-    @Override public void syncPins() { repo.syncPins(layout.allKeys()); }
+    @Override public void syncPins() {
+        java.util.Set<String> keys = layout.allKeys();
+        keys.addAll(prefs.pinnedTargets()); // shortcuts used by gestures and sidebars stay pinned
+        repo.syncPins(keys);
+    }
+
+    /* ---------- Sidebar.Host ---------- */
+
+    @Override public int sidebarIconPx() { return drawerIconPx; }
+    @Override public boolean launchTarget(String spec, View from) { return Targets.launch(this, repo, prefs, spec, from); }
+    @Override public void sidebarChanged() { syncPins(); }
 
     /** An icon view for an app or shortcut key, or null if it can't be shown right now. */
     @Override
@@ -490,6 +534,7 @@ public class HomeActivity extends Activity
         refreshHome();
         folders.refresh();
         updateWallpaper(currentPage);
+        updateEdges();
     }
 
     private void applyAppearance() {
@@ -592,20 +637,167 @@ public class HomeActivity extends Activity
         if (show) alpha.setLetters(adapter.letters());
     }
 
+    /* ---------- sidebars and extra gestures ---------- */
+
+    // Each enabled sidebar gets an edge zone: up to 200dp tall (the most Android
+    // lets an app take back from the Back gesture), top, middle or bottom.
+    private void updateEdges() {
+        View root = findViewById(R.id.root);
+        int w = root.getWidth(), h = root.getHeight();
+        if (w == 0 || h == 0) return;
+        int zoneH = Math.min(Math.round(dp(200)), h / 3), zoneW = Math.round(dp(24));
+        int top;
+        switch (prefs.sidebarHandlePos()) {
+            case Prefs.HANDLE_TOP: top = Math.round(h * 0.18f); break;
+            case Prefs.HANDLE_BOTTOM: top = Math.round(h * 0.78f) - zoneH; break;
+            default: top = (h - zoneH) / 2; break;
+        }
+        boolean left = prefs.sidebar(Prefs.SIDEBAR_LEFT), right = prefs.sidebar(Prefs.SIDEBAR_RIGHT);
+        edgeLeft.set(0, top, left ? zoneW : 0, top + zoneH);
+        edgeRight.set(right ? w - zoneW : w, top, w, top + zoneH);
+        List<Rect> exclude = new java.util.ArrayList<>();
+        if (left) exclude.add(new Rect(edgeLeft));
+        if (right) exclude.add(new Rect(edgeRight));
+        root.setSystemGestureExclusionRects(exclude);
+        boolean shown = prefs.sidebarHandleShown();
+        placeHandle(handleLeft, left && shown, top + (zoneH - Math.round(dp(56))) / 2);
+        placeHandle(handleRight, right && shown, top + (zoneH - Math.round(dp(56))) / 2);
+        if (sidebar.isOpen() && !prefs.sidebar(Sidebar.key(sidebar.side()))) sidebar.closeNow();
+    }
+
+    private void placeHandle(View handle, boolean show, int top) {
+        handle.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) return;
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(Accent.withAlpha(prefs.accent(), 140));
+        d.setCornerRadius(dp(2));
+        handle.setBackground(d);
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) handle.getLayoutParams();
+        lp.topMargin = top;
+        handle.setLayoutParams(lp);
+    }
+
+    /**
+     * Swiping in from an edge zone drags the sidebar out with the finger; swiping
+     * an open sidebar back toward its edge closes it. Returns true when it took
+     * the touch, so nothing underneath reacts.
+     */
+    private boolean trackSidebarEdge(MotionEvent ev) {
+        float x = ev.getRawX(), y = ev.getRawY();
+        int slop = Math.round(dp(10));
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                edgeSide = Sidebar.NONE;
+                edgeDragging = false;
+                closeStartX = x;
+                if (sidebar.isOpen() || drawerOpen || folders.isOpen() || resizeFrame != null) return false;
+                if (edgeLeft.contains((int) x, (int) y)) edgeSide = Sidebar.LEFT;
+                else if (edgeRight.contains((int) x, (int) y)) edgeSide = Sidebar.RIGHT;
+                edgeStartX = x;
+                edgeStartTime = ev.getEventTime();
+                return false;
+            case MotionEvent.ACTION_MOVE: {
+                if (sidebar.isOpen() && edgeSide == Sidebar.NONE) {
+                    // Open: a swipe back toward its edge closes it.
+                    float back = sidebar.side() == Sidebar.LEFT ? closeStartX - x : x - closeStartX;
+                    if (back > dp(48)) {
+                        cancelTouch(ev);
+                        sidebar.close();
+                        closeStartX = Float.NaN;
+                        return true;
+                    }
+                    return false;
+                }
+                if (edgeSide == Sidebar.NONE) return false;
+                float in = edgeSide == Sidebar.LEFT ? x - edgeStartX : edgeStartX - x;
+                if (!edgeDragging) {
+                    if (in < slop) return false;
+                    edgeDragging = true;
+                    cancelTouch(ev); // whatever was pressed underneath lets go
+                    sidebar.beginDrag(edgeSide);
+                }
+                sidebar.dragTo(in);
+                return true;
+            }
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL: {
+                if (!edgeDragging) {
+                    edgeSide = Sidebar.NONE;
+                    return false;
+                }
+                float in = edgeSide == Sidebar.LEFT ? x - edgeStartX : edgeStartX - x;
+                boolean flick = ev.getEventTime() - edgeStartTime < 250 && in > dp(40);
+                sidebar.endDrag(flick);
+                edgeSide = Sidebar.NONE;
+                edgeDragging = false;
+                return true;
+            }
+            default:
+                return edgeDragging;
+        }
+    }
+
+    private void cancelTouch(MotionEvent ev) {
+        MotionEvent c = MotionEvent.obtain(ev);
+        c.setAction(MotionEvent.ACTION_CANCEL);
+        super.dispatchTouchEvent(c);
+        gestures.onTouchEvent(c);
+        c.recycle();
+    }
+
+    // Two fingers moving up or down together, on the home screen.
+    private void trackTwoFingers(MotionEvent ev) {
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                multiTouch = false;
+                twoFired = false;
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                if (ev.getPointerCount() == 2) {
+                    multiTouch = true;
+                    twoStartY = (ev.getY(0) + ev.getY(1)) / 2f;
+                }
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if (!multiTouch || twoFired || ev.getPointerCount() < 2 || drawerOpen || sidebar.isOpen()) break;
+                float dy = (ev.getY(0) + ev.getY(1)) / 2f - twoStartY;
+                if (Math.abs(dy) > dp(80)) {
+                    twoFired = true;
+                    runGesture(prefs.gesture(dy < 0 ? Prefs.GESTURE_TWO_UP : Prefs.GESTURE_TWO_DOWN));
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** Whether a screen point is on an icon, folder or widget (double-tap only counts on empty space). */
+    private boolean overItem(float rawX, float rawY) {
+        for (CellLayout cl : new CellLayout[] {grid, dock}) {
+            for (int i = 0; i < cl.getChildCount(); i++) {
+                cl.getChildAt(i).getGlobalVisibleRect(scratch);
+                if (scratch.contains((int) rawX, (int) rawY)) return true;
+            }
+        }
+        return clock.getVisibility() == View.VISIBLE && clock.getGlobalVisibleRect(scratch)
+                && scratch.contains((int) rawX, (int) rawY);
+    }
+
     /* ---------- gestures ---------- */
 
     /** Runs a gesture action. Returns false for "nothing", so the swipe isn't swallowed. */
     private boolean runGesture(String action) {
-        if (action.startsWith(Prefs.G_APP_PREFIX)) {
-            String key = action.substring(Prefs.G_APP_PREFIX.length());
-            if (repo.find(key) == null) {
-                Toast.makeText(this, R.string.gesture_app_missing, Toast.LENGTH_SHORT).show();
-            } else {
-                launchKey(key, homeContent);
-            }
+        if (Targets.isTarget(action)) {
+            Targets.launch(this, repo, prefs, action, homeContent); // an app, activity or shortcut
             return true;
         }
         switch (action) {
+            case Prefs.G_SIDEBAR_LEFT:
+                sidebar.open(Sidebar.LEFT);
+                return true;
+            case Prefs.G_SIDEBAR_RIGHT:
+                sidebar.open(Sidebar.RIGHT);
+                return true;
             case Prefs.G_DRAWER:
                 openDrawer();
                 return true;

@@ -173,6 +173,12 @@ final class AppRepository {
 
     /** An app's own shortcuts (manifest + dynamic), best first, at most four. */
     List<ShortcutInfo> appShortcuts(AppEntry e) {
+        List<ShortcutInfo> all = allShortcuts(e);
+        return all.size() > 4 ? all.subList(0, 4) : all;
+    }
+
+    /** Every enabled shortcut the app offers (static and dynamic), in the app's order. */
+    List<ShortcutInfo> allShortcuts(AppEntry e) {
         if (!hasShortcutAccess()) return Collections.emptyList();
         try {
             LauncherApps.ShortcutQuery q = new LauncherApps.ShortcutQuery()
@@ -187,7 +193,7 @@ final class AppRepository {
             // Manifest (static) shortcuts first, then by the app's own ranking.
             out.sort((a, b) -> a.isDeclaredInManifest() != b.isDeclaredInManifest()
                     ? (a.isDeclaredInManifest() ? -1 : 1) : Integer.compare(a.getRank(), b.getRank()));
-            return out.size() > 4 ? out.subList(0, 4) : out;
+            return out;
         } catch (SecurityException | IllegalStateException ex) {
             return Collections.emptyList();
         }

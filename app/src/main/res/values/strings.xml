@@ -194,6 +194,9 @@
     <string name="gesture_down">Swipe down</string>
     <string name="gesture_left">Swipe left (past the last page)</string>
     <string name="gesture_right">Swipe right (past the first page)</string>
+    <string name="gesture_double_tap">Double-tap (empty space)</string>
+    <string name="gesture_two_up">Two-finger swipe up</string>
+    <string name="gesture_two_down">Two-finger swipe down</string>
     <string name="gesture_note">Swiping sideways always changes page first; the left and right gestures only run when there is no page that way, so with one page they run every time. Swiping across the dock changes dock pages.</string>
     <string name="g_none">Nothing</string>
     <string name="g_drawer">Open app drawer</string>
@@ -201,7 +204,9 @@
     <string name="g_notifications">Notifications</string>
     <string name="g_quick_settings">Quick settings</string>
     <string name="g_settings">Hearth settings</string>
-    <string name="g_open_app">Open an app…</string>
+    <string name="g_open_app">Open an app, activity or shortcut…</string>
+    <string name="g_sidebar_left">Open left sidebar</string>
+    <string name="g_sidebar_right">Open right sidebar</string>
     <string name="g_open_named">Open %1$s</string>
     <string name="gesture_app_missing">That app isn\'t installed any more</string>
     <string name="gesture_shade_failed">This phone didn\'t let Hearth open the notification shade</string>
@@ -239,4 +244,29 @@
     <string name="search_bar">Search bar</string>
     <string name="search_always">Always shown</string>
     <string name="search_pull">Pull down to show</string>
+
+    <!-- Targets and sidebars -->
+    <string name="target_pick">Open what?</string>
+    <string name="target_app">An app</string>
+    <string name="target_activity">An activity inside an app</string>
+    <string name="target_shortcut">An app shortcut</string>
+    <string name="target_no_activities">That app has no screens other apps can open</string>
+    <string name="target_no_shortcuts">That app has no shortcuts</string>
+    <string name="target_cant_open">Couldn\'t open that</string>
+    <string name="section_sidebars">Sidebars</string>
+    <string name="summary_sidebars">Swipe in from an edge for a column of apps and shortcuts</string>
+    <string name="sidebar_left_on">Left sidebar</string>
+    <string name="sidebar_right_on">Right sidebar</string>
+    <string name="sidebar_handle_pos">Where to swipe in</string>
+    <string name="pos_top">Top</string>
+    <string name="pos_middle">Middle</string>
+    <string name="pos_bottom">Bottom</string>
+    <string name="sidebar_handle_shown">Show a handle there</string>
+    <string name="sidebar_note">Swipe in from the edge where the handle is; the rest of the edge still works as Back. Android only lets apps take over 200dp of each edge from the Back gesture. You can also open a sidebar with a gesture. Add entries with + at its bottom; long-press an entry to move or remove it.</string>
+    <string name="sidebar_add">Add to sidebar</string>
+    <string name="sidebar_missing">(missing)</string>
+    <string name="sidebar_empty">Empty. Tap + below to add apps, activities or shortcuts.</string>
+    <string name="sidebar_empty_locked">Empty. Unlock the home screen to add things.</string>
+    <string name="move_up">Move up</string>
+    <string name="move_down">Move down</string>
 </resources>

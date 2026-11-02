@@ -53,7 +53,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
 
     // Pages. MAIN lists the others.
     private static final int MAIN = 0, APPEARANCE = 1, ICONS = 2, LABELS = 3, CLOCK = 4,
-            HOME = 5, DOCK = 6, DRAWER = 7, BACKUP = 8, GESTURES = 9;
+            HOME = 5, DOCK = 6, DRAWER = 7, BACKUP = 8, GESTURES = 9, SIDEBARS = 10;
 
     private Prefs prefs;
     private AppRepository repo;
@@ -118,6 +118,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     @Override
     public void onAppsChanged() {
         refreshPreview();
+        if (page == GESTURES) build(); // a just-picked shortcut now has its name
         if (hiddenButton != null) {
             hiddenButton.setEnabled(true);
             hiddenButton.setText(getString(R.string.hidden_apps_button, prefs.hidden().size()));
@@ -160,6 +161,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             case DRAWER: buildDrawer(); break;
             case BACKUP: buildBackup(); break;
             case GESTURES: buildGestures(); break;
+            case SIDEBARS: buildSidebars(); break;
             default: buildMain(); break;
         }
         scroll.post(() -> scroll.scrollTo(0, scrollY));
@@ -176,6 +178,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             case DRAWER: return R.string.section_drawer;
             case BACKUP: return R.string.section_backup;
             case GESTURES: return R.string.section_gestures;
+            case SIDEBARS: return R.string.section_sidebars;
             default: return R.string.settings;
         }
     }
@@ -195,6 +198,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         category(DOCK, R.string.summary_dock);
         category(DRAWER, R.string.summary_drawer);
         category(GESTURES, R.string.summary_gestures);
+        category(SIDEBARS, R.string.summary_sidebars);
         category(BACKUP, R.string.summary_backup);
 
         header(R.string.section_about);
@@ -323,17 +327,29 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         gestureRow(R.string.gesture_down, Prefs.GESTURE_DOWN);
         gestureRow(R.string.gesture_left, Prefs.GESTURE_LEFT);
         gestureRow(R.string.gesture_right, Prefs.GESTURE_RIGHT);
+        gestureRow(R.string.gesture_double_tap, Prefs.GESTURE_DOUBLE_TAP);
+        gestureRow(R.string.gesture_two_up, Prefs.GESTURE_TWO_UP);
+        gestureRow(R.string.gesture_two_down, Prefs.GESTURE_TWO_DOWN);
         note(R.string.gesture_note);
     }
 
+    private void buildSidebars() {
+        toggle(R.string.sidebar_left_on, prefs.sidebar(Prefs.SIDEBAR_LEFT), v -> prefs.setSidebar(Prefs.SIDEBAR_LEFT, v));
+        toggle(R.string.sidebar_right_on, prefs.sidebar(Prefs.SIDEBAR_RIGHT), v -> prefs.setSidebar(Prefs.SIDEBAR_RIGHT, v));
+        choice(R.string.sidebar_handle_pos, new int[] {R.string.pos_top, R.string.pos_middle, R.string.pos_bottom},
+                prefs.sidebarHandlePos(), prefs::setSidebarHandlePos);
+        toggle(R.string.sidebar_handle_shown, prefs.sidebarHandleShown(), prefs::setSidebarHandleShown);
+        note(R.string.sidebar_note);
+    }
+
     private static final int[] GESTURE_NAMES = {R.string.g_none, R.string.g_drawer, R.string.g_search,
-            R.string.g_notifications, R.string.g_quick_settings, R.string.g_settings};
+            R.string.g_notifications, R.string.g_quick_settings, R.string.g_settings,
+            R.string.g_sidebar_left, R.string.g_sidebar_right};
 
     private String gestureName(String action) {
-        if (action.startsWith(Prefs.G_APP_PREFIX)) {
-            AppEntry e = repo.find(action.substring(Prefs.G_APP_PREFIX.length()));
-            String name = e == null ? "?" : (prefs.customLabel(e.key) != null ? prefs.customLabel(e.key) : e.label);
-            return getString(R.string.g_open_named, name);
+        if (Targets.isTarget(action)) {
+            String name = Targets.label(this, repo, prefs, action);
+            return getString(R.string.g_open_named, name == null ? "?" : name);
         }
         for (int i = 0; i < Prefs.GESTURE_ACTIONS.length; i++) {
             if (Prefs.GESTURE_ACTIONS[i].equals(action)) return getString(GESTURE_NAMES[i]);
@@ -372,7 +388,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             names[i] = getString(GESTURE_NAMES[i]);
             if (Prefs.GESTURE_ACTIONS[i].equals(current)) checked = i;
         }
-        names[GESTURE_NAMES.length] = current.startsWith(Prefs.G_APP_PREFIX)
+        names[GESTURE_NAMES.length] = Targets.isTarget(current)
                 ? gestureName(current) : getString(R.string.g_open_app);
         new AlertDialog.Builder(this)
                 .setTitle(label)
@@ -382,26 +398,11 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
                         prefs.setGesture(which, Prefs.GESTURE_ACTIONS[i]);
                         build();
                     } else {
-                        pickGestureApp(label, which);
+                        Targets.pick(this, repo, prefs, spec -> {
+                            prefs.setGesture(which, spec);
+                            build();
+                        });
                     }
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    private void pickGestureApp(int label, String which) {
-        List<AppEntry> apps = repo.apps();
-        if (apps.isEmpty()) return;
-        String[] names = new String[apps.size()];
-        for (int i = 0; i < apps.size(); i++) {
-            AppEntry e = apps.get(i);
-            names[i] = prefs.customLabel(e.key) != null ? prefs.customLabel(e.key) : e.label;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(label)
-                .setItems(names, (d, i) -> {
-                    prefs.setGesture(which, Prefs.G_APP_PREFIX + apps.get(i).key);
-                    build();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
