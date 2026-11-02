@@ -1,0 +1,64 @@
+name: Dependabot auto-merge
+
+# For Dependabot's pull requests only: build the app with the update and, if it
+# builds, merge it into main and delete the branch. If it doesn't build, the PR
+# stays open (that update would break Hearth).
+#
+# The merge is made with GitHub's built-in token, which doesn't start other
+# workflows, so a dependency update alone doesn't publish to Play; it ships with
+# the next ordinary push.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          gradle-version: "9.8.2"
+
+      # Unsigned debug build: proves the update compiles without needing any secrets.
+      - name: Build
+        run: gradle --no-daemon :app:assembleDebug
+
+  merge:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Merge into main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: |
+          if gh pr merge "$PR" --squash --delete-branch; then
+            exit 0
+          fi
+          # GitHub doesn't let workflows change workflow files, which is what
+          # updates to the Actions themselves do. Those need one manual merge.
+          gh pr comment "$PR" --body "This update builds fine, but GitHub doesn't let a workflow merge changes to workflow files. It needs merging by hand (or ask Claude to apply it)."
+          exit 1
