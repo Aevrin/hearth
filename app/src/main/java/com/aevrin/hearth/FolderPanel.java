@@ -18,7 +18,9 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
+import android.widget.LinearLayout;
 import android.widget.PopupMenu;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.window.OnBackInvokedCallback;
@@ -51,6 +53,7 @@ final class FolderPanel {
     private final View card;
     private final TextView title;
     private final GridLayout grid;
+    private final ScrollView scroller;
     private final Rect source = new Rect();
     private HomeLayout.Folder folder;
     private final OnBackInvokedCallback onBack = this::close;
@@ -62,6 +65,7 @@ final class FolderPanel {
         this.card = card;
         this.title = title;
         this.grid = grid;
+        this.scroller = (ScrollView) grid.getParent();
         overlay.setOnClickListener(v -> close());
         title.setOnClickListener(v -> { if (folder != null && !host.prefs().lockLayout()) rename(folder); });
     }
@@ -124,12 +128,13 @@ final class FolderPanel {
         int w = card.getWidth(), h = card.getHeight();
         int ow = overlay.getWidth(), oh = overlay.getHeight();
         int margin = Math.round(dp(8));
+        int gap = Math.round(dp(24)); // clear space between the card and its icon
         Insets bars = overlay.getRootWindowInsets() == null ? Insets.NONE
                 : overlay.getRootWindowInsets().getInsets(WindowInsets.Type.systemBars());
         float cx = source.exactCenterX() - origin[0];
         float x = Math.max(margin, Math.min(ow - w - margin, cx - w / 2f));
-        float y = source.top - origin[1] - h - margin;                    // above the icon
-        if (y < bars.top + margin) y = source.bottom - origin[1] + margin; // else below
+        float y = source.top - origin[1] - h - gap;                    // above the icon
+        if (y < bars.top + margin) y = source.bottom - origin[1] + gap; // else below
         y = Math.max(bars.top + margin, Math.min(oh - bars.bottom - h - margin, y));
         card.setX(x);
         card.setY(y);
@@ -148,6 +153,7 @@ final class FolderPanel {
         title.setText(nameOf(f));
         grid.removeAllViews();
         int cellW = Math.round(dp(76));
+        int cellH = Math.round(dp(92));
         int count = 0;
         boolean labels = host.prefs().homeLabels();
         for (String key : f.apps) {
@@ -161,11 +167,24 @@ final class FolderPanel {
             v.setOnLongClickListener(view -> { showEntryMenu(f, key, view); return true; });
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
             lp.width = cellW;
-            lp.height = Math.round(dp(92));
+            lp.height = cellH;
             grid.addView(v, lp);
         }
-        // As wide as it needs to be, up to four columns.
-        grid.setColumnCount(Math.max(3, Math.min(4, count)));
+        // Square-ish: 2 columns up to 4 apps (2×1, 2×2), 3 up to 9, 4 up to 16, then 5 —
+        // as many as fit across the screen. Taller than the screen scrolls.
+        View root = activity.getWindow().getDecorView();
+        int screenW = root.getWidth() > 0 ? root.getWidth() : activity.getResources().getDisplayMetrics().widthPixels;
+        int screenH = root.getHeight() > 0 ? root.getHeight() : activity.getResources().getDisplayMetrics().heightPixels;
+        int wanted = count <= 4 ? 2 : count <= 9 ? 3 : count <= 16 ? 4 : 5;
+        int fit = Math.max(2, (screenW - Math.round(dp(16 + 24))) / cellW);
+        int cols = Math.min(wanted, fit);
+        grid.setColumnCount(cols);
+        int rows = (count + cols - 1) / cols;
+        int maxH = screenH - Math.round(dp(220)); // room for the title, system bars and margins
+        LinearLayout.LayoutParams slp = (LinearLayout.LayoutParams) scroller.getLayoutParams();
+        slp.height = rows * cellH > maxH ? Math.max(cellH, maxH) : LinearLayout.LayoutParams.WRAP_CONTENT;
+        scroller.setLayoutParams(slp);
+        scroller.scrollTo(0, 0);
     }
 
     private void showEntryMenu(HomeLayout.Folder f, String key, View anchor) {

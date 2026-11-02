@@ -38,7 +38,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     message"), then Rename, Change icon, Remove, App info, Uninstall.
   - **Pinned shortcuts:** when another app offers "Add to home screen" (a contact, a site, a
     playlist), Hearth asks and places it on your default page.
-  - **Folders:** tap to open as a compact panel right above the folder; tap the name to rename it.
+  - **Folders:** tap to open as a compact panel above the folder, sized to fit: 2×1 or 2×2 for up
+    to four apps, then 3×3, 4×4 and wider where the screen allows; very big folders scroll. Tap
+    the name to rename it.
     Long-press inside for Move to home screen, Remove from folder, Rename, Change icon, App info,
     Uninstall. A folder left with one app turns back into that app.
   - Long-press empty space for a menu where you pressed: All apps, Wallpaper, Hearth settings,
