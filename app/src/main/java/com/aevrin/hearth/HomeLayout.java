@@ -515,6 +515,26 @@ final class HomeLayout {
         save();
     }
 
+    /**
+     * Reorders a folder. `shown` is the new order of the entries currently shown;
+     * any others (an app still loading, say) keep their place at the end.
+     */
+    void setFolderOrder(Folder f, List<String> shown) {
+        List<String> order = new ArrayList<>();
+        for (String k : shown) if (f.apps.contains(k) && !order.contains(k)) order.add(k);
+        for (String k : f.apps) if (!order.contains(k)) order.add(k);
+        f.apps.clear();
+        f.apps.addAll(order);
+        save();
+    }
+
+    /** Whether the key is placed somewhere other than folder `f` (home, dock or another folder). */
+    boolean containsElsewhere(Folder f, String key) {
+        for (Item it : items) if (it.key.equals(key)) return true;
+        for (Folder o : folders.values()) if (o != f && o.apps.contains(key)) return true;
+        return false;
+    }
+
     void renameFolder(Folder f, String name) {
         f.name = name == null ? "" : name.trim();
         save();

@@ -45,6 +45,8 @@ final class FolderPanel {
         void rename(AppEntry app);
         void changeIcon(AppEntry app);
         void afterLayout(View v, Runnable r);
+        /** A long-press inside the folder: becomes a drag if the finger moves. */
+        void armFolderDrag(HomeLayout.Folder f, String key, View v, PopupMenu menu);
     }
 
     private final Activity activity;
@@ -71,6 +73,23 @@ final class FolderPanel {
     }
 
     boolean isOpen() { return folder != null; }
+    HomeLayout.Folder current() { return folder; }
+    GridLayout grid() { return grid; }
+    View card() { return card; }
+
+    /**
+     * Gets out of the way mid-drag, instantly, so the home screen underneath gets
+     * the drop. Also moved off-screen: a hidden view that took part in the drag
+     * would otherwise keep catching drag events where it used to be.
+     */
+    void closeForDrag() {
+        if (folder == null) return;
+        folder = null;
+        activity.getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(onBack);
+        overlay.animate().cancel();
+        overlay.setTranslationX(100000f);
+        overlay.setVisibility(View.GONE);
+    }
 
     String nameOf(HomeLayout.Folder f) {
         return f.name == null || f.name.isEmpty() ? activity.getString(R.string.folder_default_name) : f.name;
@@ -85,6 +104,7 @@ final class FolderPanel {
         card.setBackground(bg);
         populate();
         boolean opening = overlay.getVisibility() != View.VISIBLE;
+        overlay.setTranslationX(0f);
         overlay.setVisibility(View.VISIBLE);
         overlay.setAlpha(1f);
         if (opening) {
@@ -164,7 +184,12 @@ final class FolderPanel {
                 host.launchKey(key, view);
                 overlay.postDelayed(this::close, 300);
             });
-            v.setOnLongClickListener(view -> { showEntryMenu(f, key, view); return true; });
+            v.setTag(key); // read back when the order changes by dragging
+            v.setOnLongClickListener(view -> {
+                PopupMenu menu = showEntryMenu(f, key, view);
+                if (!host.prefs().lockLayout()) host.armFolderDrag(f, key, view, menu);
+                return true;
+            });
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
             lp.width = cellW;
             lp.height = cellH;
@@ -187,7 +212,7 @@ final class FolderPanel {
         scroller.scrollTo(0, 0);
     }
 
-    private void showEntryMenu(HomeLayout.Folder f, String key, View anchor) {
+    private PopupMenu showEntryMenu(HomeLayout.Folder f, String key, View anchor) {
         anchor.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         AppEntry app = host.repo().find(key);
         boolean locked = host.prefs().lockLayout();
@@ -202,7 +227,7 @@ final class FolderPanel {
             menu.getMenu().add(0, 5, 4, R.string.app_info);
             if (host.repo().canUninstall(app)) menu.getMenu().add(0, 6, 5, R.string.uninstall);
         }
-        if (menu.getMenu().size() == 0) return;
+        if (menu.getMenu().size() == 0) return null;
         menu.setOnMenuItemClickListener(mi -> {
             switch (mi.getItemId()) {
                 case 1:
@@ -225,6 +250,7 @@ final class FolderPanel {
             }
         });
         menu.show();
+        return menu;
     }
 
     // A folder that dissolved (one entry left) closes; otherwise it stays open, updated.

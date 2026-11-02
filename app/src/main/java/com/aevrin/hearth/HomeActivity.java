@@ -138,6 +138,7 @@ public class HomeActivity extends Activity
         final boolean fromDrawer;
         float startX, startY;       // screen coordinates where the drag began
         int grabX, grabY;           // which cell of a widget the finger is on
+        HomeLayout.Folder folder;   // set when the drag started inside an open folder
         boolean movedFar;
         DragState(HomeLayout.Item item, String key, AppEntry app, View view, boolean fromDrawer) {
             this.item = item; this.key = key; this.app = app; this.view = view; this.fromDrawer = fromDrawer;
@@ -261,6 +262,8 @@ public class HomeActivity extends Activity
         dropInfo.setOnDragListener((v, e) -> onTargetDrag(dropInfo, e));
         dropUninstall.setOnDragListener((v, e) -> onTargetDrag(dropUninstall, e));
         findViewById(R.id.root).setOnDragListener(this::onRootDrag);
+        folders.grid().setOnDragListener(this::onFolderGridDrag);
+        findViewById(R.id.folder_overlay).setOnDragListener(this::onFolderOverlayDrag);
 
         currentPage = prefs.defaultPage();
         reloadConfig();
@@ -418,6 +421,13 @@ public class HomeActivity extends Activity
         if (app == null) return;
         prefs.recordLaunch(key);
         repo.launch(app, from);
+    }
+
+    @Override
+    public void armFolderDrag(HomeLayout.Folder f, String key, View v, PopupMenu menu) {
+        DragState st = new DragState(null, key, repo.find(key), v, false);
+        st.folder = f;
+        armDrag(st, menu);
     }
 
     /** Runs once, right after the view's next layout pass. */
@@ -782,7 +792,7 @@ public class HomeActivity extends Activity
         ClipData data = ClipData.newPlainText("hearth", st.key);
         if (!st.view.startDragAndDrop(data, new View.DragShadowBuilder(st.view), st, 0)) return;
         if (!st.fromDrawer) st.view.setVisibility(View.INVISIBLE);
-        dropRemove.setVisibility(st.item != null ? View.VISIBLE : View.GONE);
+        dropRemove.setVisibility(st.item != null || st.folder != null ? View.VISIBLE : View.GONE);
         dropInfo.setVisibility(st.app != null ? View.VISIBLE : View.GONE);
         dropUninstall.setVisibility(st.app != null && repo.canUninstall(st.app) ? View.VISIBLE : View.GONE);
         dropBar.setVisibility(View.VISIBLE);
@@ -790,6 +800,16 @@ public class HomeActivity extends Activity
 
     /** What a drop at (x, y) would do: {mode, cellX, cellY, page}. */
     private int[] dropPlan(CellLayout target, String container, DragState st, float x, float y) {
+        int[] plan = rawDropPlan(target, container, st, x, y);
+        // Dragged out of a folder and back onto that same folder: nothing to do.
+        if (st.folder != null && plan[0] == CellLayout.HL_FOLDER) {
+            HomeLayout.Item other = layout.at(container, plan[3], plan[1], plan[2]);
+            if (other != null && layout.folder(other) == st.folder) plan[0] = CellLayout.HL_NONE;
+        }
+        return plan;
+    }
+
+    private int[] rawDropPlan(CellLayout target, String container, DragState st, float x, float y) {
         int page = HomeLayout.HOME.equals(container) ? currentPage : currentDockPage;
         int[] cell = target.cellAt(x, y);
         if (st.item != null && isBig(st.item)) {
@@ -867,6 +887,10 @@ public class HomeActivity extends Activity
                     Toast.makeText(this, HomeLayout.DOCK.equals(container) ? R.string.dock_full : R.string.home_full,
                             Toast.LENGTH_SHORT).show();
                 }
+                // Out of a folder: once it has landed somewhere, take it out of the folder.
+                if (st.folder != null && layout.containsElsewhere(st.folder, st.key)) {
+                    layout.removeFromFolder(st.folder, st.key);
+                }
                 return true;
             }
             default:
@@ -882,6 +906,7 @@ public class HomeActivity extends Activity
             case DragEvent.ACTION_DRAG_EXITED: target.setActivated(false); return true;
             case DragEvent.ACTION_DROP:
                 if (target == dropRemove && st.item != null) removeItem(st.item);
+                else if (target == dropRemove && st.folder != null) layout.removeFromFolder(st.folder, st.key);
                 else if (target == dropInfo && st.app != null) repo.openAppInfo(st.app, st.view);
                 else if (target == dropUninstall && st.app != null) repo.uninstall(this, st.app);
                 return true;
@@ -902,9 +927,71 @@ public class HomeActivity extends Activity
         if (!st.fromDrawer) st.view.setVisibility(View.VISIBLE);
         dropBar.setVisibility(View.GONE);
         for (TextView t : new TextView[] {dropRemove, dropInfo, dropUninstall}) t.setActivated(false);
+        // Still inside the open folder (even if let go over its title): keep the new order.
+        if (st.folder != null && folders.isOpen() && folders.current() == st.folder) {
+            GridLayout g = folders.grid();
+            List<String> order = new java.util.ArrayList<>();
+            for (int i = 0; i < g.getChildCount(); i++) {
+                Object tag = g.getChildAt(i).getTag();
+                if (tag instanceof String) order.add((String) tag);
+            }
+            layout.setFolderOrder(st.folder, order);
+        }
         refreshHome();
+        folders.refresh(); // shows the new order, or closes a folder that dissolved
         syncPins();
         return true;
+    }
+
+    // Inside an open folder: the other entries shift aside live as you drag; the
+    // order is saved on drop.
+    private boolean onFolderGridDrag(View v, DragEvent e) {
+        if (!(e.getLocalState() instanceof DragState)) return false;
+        DragState st = (DragState) e.getLocalState();
+        if (st.folder == null) return false;
+        GridLayout g = folders.grid();
+        switch (e.getAction()) {
+            case DragEvent.ACTION_DRAG_LOCATION: {
+                int to = -1;
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    View c = g.getChildAt(i);
+                    if (e.getX() >= c.getLeft() && e.getX() < c.getRight()
+                            && e.getY() >= c.getTop() && e.getY() < c.getBottom()) { to = i; break; }
+                }
+                int from = g.indexOfChild(st.view);
+                if (to >= 0 && from >= 0 && to != from) {
+                    g.removeView(st.view);
+                    g.addView(st.view, to);
+                }
+                return true;
+            }
+            case DragEvent.ACTION_DROP: {
+                List<String> order = new java.util.ArrayList<>();
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    Object tag = g.getChildAt(i).getTag();
+                    if (tag instanceof String) order.add((String) tag);
+                }
+                layout.setFolderOrder(st.folder, order);
+                return true;
+            }
+            default:
+                return true;
+        }
+    }
+
+    // Reached only outside the folder card (the card's grid takes events over it):
+    // the folder closes so the app can be dropped on the home screen.
+    private boolean onFolderOverlayDrag(View v, DragEvent e) {
+        if (!(e.getLocalState() instanceof DragState)) return false;
+        DragState st = (DragState) e.getLocalState();
+        if (st.folder == null) return false;
+        if (e.getAction() == DragEvent.ACTION_DRAG_LOCATION && folders.isOpen()) {
+            View card = folders.card();
+            boolean inside = e.getX() >= card.getX() && e.getX() < card.getX() + card.getWidth()
+                    && e.getY() >= card.getY() && e.getY() < card.getY() + card.getHeight();
+            if (!inside) folders.closeForDrag();
+        }
+        return e.getAction() != DragEvent.ACTION_DROP;
     }
 
     // Holding a dragged icon at the left or right edge flips to that page.

@@ -42,7 +42,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     to four apps, then 3×3, 4×4 and wider where the screen allows; very big folders scroll. Tap
     the name to rename it.
     Long-press inside for Move to home screen, Remove from folder, Rename, Change icon, App info,
-    Uninstall. A folder left with one app turns back into that app.
+    Uninstall; keep holding and move to **reorder** (the others shift aside as you drag), or drag
+    outside the panel to take the app out and drop it anywhere. A folder left with one app turns
+    back into that app.
   - Long-press empty space for a menu where you pressed: All apps, Wallpaper, Hearth settings,
     **Pages** (add, delete, move left/right, make default), and **Lock home screen**.
   - Swipe sideways to change page; the wallpaper scrolls with you (optional). Home returns to your
