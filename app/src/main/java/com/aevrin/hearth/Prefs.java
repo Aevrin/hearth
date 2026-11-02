@@ -99,6 +99,10 @@ final class Prefs {
     static final String SIDEBAR_HANDLE_POS = "sidebar_handle_pos";
     static final String SIDEBAR_HANDLE_SHOWN = "sidebar_handle_shown";
     static final int HANDLE_TOP = 0, HANDLE_MIDDLE = 1, HANDLE_BOTTOM = 2;
+    /** Sidebar background: the theme's, a solid colour, or a gradient. Keys are "<side>" + suffix. */
+    static final int SB_THEME = 0, SB_SOLID = 1, SB_GRADIENT = 2;
+    private static final String BG_MODE = "_bg_mode", BG_COLOR = "_bg_color", BG_COLOR2 = "_bg_color2",
+            BG_DIRECTION = "_bg_direction", BG_OPACITY = "_bg_opacity";
 
     /** Gesture actions. Also "app:<key>" to open a particular app. */
     static final String G_NONE = "none", G_DRAWER = "drawer", G_SEARCH = "search",
@@ -256,6 +260,26 @@ final class Prefs {
     void setSidebarHandlePos(int v) { sp.edit().putInt(SIDEBAR_HANDLE_POS, v).apply(); }
     boolean sidebarHandleShown() { return sp.getBoolean(SIDEBAR_HANDLE_SHOWN, true); }
     void setSidebarHandleShown(boolean v) { sp.edit().putBoolean(SIDEBAR_HANDLE_SHOWN, v).apply(); }
+
+    int sidebarBgMode(String side) { return clamp(sp.getInt(side + BG_MODE, SB_THEME), SB_THEME, SB_GRADIENT); }
+    void setSidebarBgMode(String side, int v) { sp.edit().putInt(side + BG_MODE, v).apply(); }
+    int sidebarColor(String side) { return sp.getInt(side + BG_COLOR, 0xFF375A82); }
+    void setSidebarColor(String side, int v) { sp.edit().putInt(side + BG_COLOR, v | 0xFF000000).apply(); }
+    int sidebarColor2(String side) { return sp.getInt(side + BG_COLOR2, 0xFF06B6D4); }
+    void setSidebarColor2(String side, int v) { sp.edit().putInt(side + BG_COLOR2, v | 0xFF000000).apply(); }
+    int sidebarDirection(String side) { return clamp(sp.getInt(side + BG_DIRECTION, Accent.VERTICAL), Accent.DIAGONAL, Accent.VERTICAL); }
+    void setSidebarDirection(String side, int v) { sp.edit().putInt(side + BG_DIRECTION, v).apply(); }
+    /** 0–100; 0 is fully see-through. */
+    int sidebarOpacity(String side) { return clamp(sp.getInt(side + BG_OPACITY, 90), 0, 100); }
+    void setSidebarOpacity(String side, int v) { sp.edit().putInt(side + BG_OPACITY, clamp(v, 0, 100)).apply(); }
+
+    /** The sidebar's background colours as an Accent (for its gradient handling), or null for the theme's. */
+    Accent sidebarFill(String side) {
+        int mode = sidebarBgMode(side);
+        if (mode == SB_THEME) return null;
+        int c = sidebarColor(side);
+        return new Accent(c, mode == SB_GRADIENT ? sidebarColor2(side) : c, mode == SB_GRADIENT, sidebarDirection(side));
+    }
 
     private static String itemsKey(String side) {
         return SIDEBAR_RIGHT.equals(side) ? SIDEBAR_RIGHT_ITEMS : SIDEBAR_LEFT_ITEMS;
@@ -468,6 +492,13 @@ final class Prefs {
         o.put(SIDEBAR_HANDLE_POS, sidebarHandlePos());
         o.put(SIDEBAR_HANDLE_SHOWN, sidebarHandleShown());
         o.put(SIDEBAR_LEFT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_LEFT)));
+        for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) {
+            o.put(side + BG_MODE, sidebarBgMode(side));
+            o.put(side + BG_COLOR, String.format("#%08X", sidebarColor(side)));
+            o.put(side + BG_COLOR2, String.format("#%08X", sidebarColor2(side)));
+            o.put(side + BG_DIRECTION, sidebarDirection(side));
+            o.put(side + BG_OPACITY, sidebarOpacity(side));
+        }
         o.put(SIDEBAR_RIGHT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_RIGHT)));
         return o;
     }
@@ -477,6 +508,12 @@ final class Prefs {
         SharedPreferences.Editor e = sp.edit();
         for (Iterator<String> it = o.keys(); it.hasNext(); ) {
             String k = it.next();
+            // Per-sidebar background settings.
+            if (k.startsWith(SIDEBAR_LEFT + "_bg_") || k.startsWith(SIDEBAR_RIGHT + "_bg_")) {
+                if (k.endsWith(BG_COLOR) || k.endsWith(BG_COLOR2)) e.putInt(k, Color.parseColor(o.getString(k)));
+                else if (k.endsWith(BG_MODE) || k.endsWith(BG_DIRECTION) || k.endsWith(BG_OPACITY)) e.putInt(k, o.getInt(k));
+                continue;
+            }
             switch (k) {
                 case DRAWER_OPACITY: case DOCK_OPACITY: case COLUMNS: case ROWS: case PAGES:
                 case DOCK_SLOTS: case DRAWER_COLUMNS: case ICON_SIZE:

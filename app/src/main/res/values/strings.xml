@@ -264,6 +264,13 @@
     <string name="sidebar_handle_shown">Show a handle there</string>
     <string name="sidebar_note">Swipe in from the edge where the handle is; the rest of the edge still works as Back. Android only lets apps take over 200dp of each edge from the Back gesture. You can also open a sidebar with a gesture. Add entries with + at its bottom; long-press an entry to move or remove it.</string>
     <string name="sidebar_add">Add to sidebar</string>
+    <string name="sidebar_enabled">On</string>
+    <string name="sidebar_background">Background</string>
+    <string name="sb_theme">Theme</string>
+    <string name="sb_solid">Colour</string>
+    <string name="sb_gradient">Gradient</string>
+    <string name="sb_colour">Colour</string>
+    <string name="sidebar_opacity">Opacity (0 = see-through)</string>
     <string name="sidebar_missing">(missing)</string>
     <string name="sidebar_empty">Empty. Tap + below to add apps, activities or shortcuts.</string>
     <string name="sidebar_empty_locked">Empty. Unlock the home screen to add things.</string>

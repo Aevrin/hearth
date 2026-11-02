@@ -334,12 +334,56 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     }
 
     private void buildSidebars() {
-        toggle(R.string.sidebar_left_on, prefs.sidebar(Prefs.SIDEBAR_LEFT), v -> prefs.setSidebar(Prefs.SIDEBAR_LEFT, v));
-        toggle(R.string.sidebar_right_on, prefs.sidebar(Prefs.SIDEBAR_RIGHT), v -> prefs.setSidebar(Prefs.SIDEBAR_RIGHT, v));
         choice(R.string.sidebar_handle_pos, new int[] {R.string.pos_top, R.string.pos_middle, R.string.pos_bottom},
                 prefs.sidebarHandlePos(), prefs::setSidebarHandlePos);
         toggle(R.string.sidebar_handle_shown, prefs.sidebarHandleShown(), prefs::setSidebarHandleShown);
         note(R.string.sidebar_note);
+        sidebarSection(Prefs.SIDEBAR_LEFT, R.string.sidebar_left_on);
+        sidebarSection(Prefs.SIDEBAR_RIGHT, R.string.sidebar_right_on);
+    }
+
+    /** One sidebar: on/off and, when on, its own background colour, gradient and opacity. */
+    private void sidebarSection(String side, int title) {
+        header(title);
+        toggle(R.string.sidebar_enabled, prefs.sidebar(side), v -> { prefs.setSidebar(side, v); build(); });
+        if (!prefs.sidebar(side)) return;
+        int mode = prefs.sidebarBgMode(side);
+        choice(R.string.sidebar_background, new int[] {R.string.sb_theme, R.string.sb_solid, R.string.sb_gradient},
+                mode, i -> { prefs.setSidebarBgMode(side, i); build(); });
+        if (mode != Prefs.SB_THEME) {
+            // Preview bar in the chosen fill.
+            Accent fill = prefs.sidebarFill(side);
+            View bar = new View(this);
+            GradientDrawable d = fill.drawable();
+            d.setAlpha(Math.round(prefs.sidebarOpacity(side) * 2.55f));
+            d.setCornerRadius(dp(12));
+            d.setStroke(dp(1), 0x33E6F0FF);
+            bar.setBackground(d);
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+            blp.topMargin = dp(12);
+            content.addView(bar, blp);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams rlp = matchWrap();
+            rlp.topMargin = dp(8);
+            content.addView(row, rlp);
+            row.addView(colourButton(mode == Prefs.SB_GRADIENT ? R.string.gradient_start : R.string.sb_colour,
+                    prefs.sidebarColor(side), () -> showColorPicker(prefs.sidebarColor(side), c -> {
+                        prefs.setSidebarColor(side, c);
+                        build();
+                    })));
+            if (mode == Prefs.SB_GRADIENT) {
+                row.addView(colourButton(R.string.gradient_end, prefs.sidebarColor2(side),
+                        () -> showColorPicker(prefs.sidebarColor2(side), c -> {
+                            prefs.setSidebarColor2(side, c);
+                            build();
+                        })));
+                choice(R.string.gradient_direction,
+                        new int[] {R.string.direction_diagonal, R.string.direction_horizontal, R.string.direction_vertical},
+                        prefs.sidebarDirection(side), i -> { prefs.setSidebarDirection(side, i); build(); });
+            }
+        }
+        slider(R.string.sidebar_opacity, prefs.sidebarOpacity(side), v -> prefs.setSidebarOpacity(side, v));
     }
 
     private static final int[] GESTURE_NAMES = {R.string.g_none, R.string.g_drawer, R.string.g_search,

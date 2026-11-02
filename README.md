@@ -69,7 +69,8 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   handle is and a column of apps, activities and shortcuts follows your finger out. Add with +,
   long-press to reorder or remove; tap outside, swipe it back or press Back to close. The handle
   zone is up to 200dp of the edge (top, middle or bottom), the most Android lets an app take from
-  the Back gesture; the rest of the edge is still Back.
+  the Back gesture; the rest of the edge is still Back. Each sidebar has its own background (theme, any colour,
+  or a gradient) and opacity down to fully see-through; labels turn dark on light backgrounds.
 - **Widgets:** long-press empty space → **Widgets** for every installed widget, grouped by app with
   previews, sizes and a search box. Hearth places it in the first free space big enough (on the
   current page first), running the widget's own setup screen if it has one. The first time you add

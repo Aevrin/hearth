@@ -51,6 +51,7 @@ final class Sidebar {
     private int insetTop, insetBottom;
     private final OnBackInvokedCallback back = this::close;
     private boolean backRegistered;
+    private boolean light; // a light background: dark text and icons on it
 
     Sidebar(Activity activity, Host host, View layer, View scrim, LinearLayout panel, LinearLayout list, ImageView add) {
         this.activity = activity;
@@ -125,8 +126,21 @@ final class Sidebar {
         lp.gravity = s == RIGHT ? Gravity.END : Gravity.START;
         panel.setLayoutParams(lp);
         float r = 24 * activity.getResources().getDisplayMetrics().density;
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Prefs.background(Math.max(host.prefs().drawerOpacity(), 88)));
+        // Its own background: the theme's, a colour or a gradient, at its own opacity.
+        Prefs prefs = host.prefs();
+        String k = key(s);
+        Accent fill = prefs.sidebarFill(k);
+        int opacity = prefs.sidebarOpacity(k);
+        GradientDrawable bg;
+        if (fill == null) {
+            bg = new GradientDrawable();
+            bg.setColor(Prefs.background(opacity));
+            light = false;
+        } else {
+            bg = fill.drawable();
+            bg.setAlpha(Math.round(opacity * 2.55f));
+            light = opacity > 45 && android.graphics.Color.luminance(fill.solid()) > 0.55f;
+        }
         // Rounded on the inner side only.
         bg.setCornerRadii(s == RIGHT ? new float[] {r, r, 0, 0, 0, 0, r, r} : new float[] {0, 0, r, r, r, r, 0, 0});
         panel.setBackground(bg);
@@ -180,6 +194,7 @@ final class Sidebar {
         Prefs prefs = host.prefs();
         boolean locked = prefs.lockLayout();
         add.setVisibility(locked ? View.GONE : View.VISIBLE);
+        add.setImageTintList(android.content.res.ColorStateList.valueOf(light ? 0xFF14202E : 0xFFE6F0FF));
         List<String> items = prefs.sidebarItems(key(side));
         int iconPx = host.sidebarIconPx();
         for (int i = 0; i < items.size(); i++) {
@@ -194,6 +209,10 @@ final class Sidebar {
             TextView label = v.findViewById(R.id.label);
             label.setText(name);
             prefs.styleLabel(label);
+            if (light && !prefs.labelAccent()) {
+                label.setTextColor(0xFF14202E);
+                label.setShadowLayer(0f, 0f, 0f, 0);
+            }
             label.setVisibility(prefs.drawerLabels() ? View.VISIBLE : View.GONE);
             v.setContentDescription(name);
             v.setOnClickListener(x -> {
@@ -212,7 +231,7 @@ final class Sidebar {
         if (items.isEmpty()) {
             TextView hint = new TextView(activity);
             hint.setText(locked ? R.string.sidebar_empty_locked : R.string.sidebar_empty);
-            hint.setTextColor(0x99E6F0FF);
+            hint.setTextColor(light ? 0x9914202E : 0x99E6F0FF);
             hint.setTextSize(12);
             hint.setGravity(Gravity.CENTER);
             int p = Math.round(8 * activity.getResources().getDisplayMetrics().density);
