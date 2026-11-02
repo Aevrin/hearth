@@ -34,20 +34,30 @@ import java.util.Set;
 final class HomeLayout {
 
     private static final String TAG = "HomeLayout";
-    // v1 home only · v2 +container · v3 +page · v4 +folders · v5 dock pages. Older files load as-is.
-    private static final int VERSION = 5;
+    // v1 home only · v2 +container · v3 +page · v4 +folders · v5 dock pages · v6 widget spans.
+    // Older files load as-is.
+    private static final int VERSION = 6;
 
     static final String HOME = "home";
     static final String DOCK = "dock";
     static final String FOLDER_PREFIX = "folder:";
+    static final String WIDGET_PREFIX = "widget:";
 
     static final class Item {
-        /** An app key, a shortcut key, or FOLDER_PREFIX + folder id. */
+        /** An app key, a shortcut key, FOLDER_PREFIX + folder id, or WIDGET_PREFIX + widget id. */
         String key;
         String container;
         int page, x, y;
+        /** Cells covered, from (x, y) right and down. Only widgets are bigger than 1×1. */
+        int spanX = 1, spanY = 1;
         Item(String key, String container, int page, int x, int y) {
             this.key = key; this.container = container; this.page = page; this.x = x; this.y = y;
+        }
+        boolean covers(String c, int p, int cx, int cy) {
+            return container.equals(c) && page == p && cx >= x && cx < x + spanX && cy >= y && cy < y + spanY;
+        }
+        boolean overlaps(String c, int p, int ax, int ay, int w, int h) {
+            return container.equals(c) && page == p && ax < x + spanX && x < ax + w && ay < y + spanY && y < ay + h;
         }
     }
 
@@ -104,7 +114,13 @@ final class HomeLayout {
                     String c = DOCK.equals(o.optString("container")) ? DOCK : HOME;
                     String key = o.getString("key");
                     if (isFolderKey(key) && !layout.folders.containsKey(folderId(key))) continue;
-                    layout.items.add(new Item(key, c, o.optInt("page", 0), o.getInt("x"), o.getInt("y")));
+                    Item it = new Item(key, c, o.optInt("page", 0), o.getInt("x"), o.getInt("y"));
+                    if (isWidgetKey(key)) {
+                        it.container = HOME; // widgets live on home pages only
+                        it.spanX = Math.max(1, o.optInt("w", 1));
+                        it.spanY = Math.max(1, o.optInt("h", 1));
+                    }
+                    layout.items.add(it);
                 }
                 // Folders nothing points at are leftovers; drop them.
                 Set<String> used = new HashSet<>();
@@ -127,7 +143,7 @@ final class HomeLayout {
     List<Item> items() { return items; }
 
     boolean isEmpty() {
-        for (Item it : items) if (fits(it.container, it.page, it.x, it.y)) return false;
+        for (Item it : items) if (fitsItem(it, it.container, it.page, it.x, it.y)) return false;
         return true;
     }
 
@@ -142,14 +158,26 @@ final class HomeLayout {
         return page >= 0 && page < pages && x >= 0 && y >= 0 && x < columns && y < rows;
     }
 
+    /** Whether an item, with its span, fits entirely on the grid at (x, y). */
+    boolean fitsItem(Item it, String container, int page, int x, int y) {
+        if (it.spanX == 1 && it.spanY == 1) return fits(container, page, x, y);
+        return HOME.equals(container) && fits(container, page, x, y)
+                && x + it.spanX <= columns && y + it.spanY <= rows;
+    }
+
+    /** True when no item other than `ignore` covers any of the w×h cells at (x, y). */
+    boolean areaFree(String container, int page, int x, int y, int w, int h, Item ignore) {
+        for (Item it : items) if (it != ignore && it.overlaps(container, page, x, y, w, h)) return false;
+        return true;
+    }
+
     private int cols(String container) { return DOCK.equals(container) ? dockSlots : columns; }
     private int rowsOf(String container) { return DOCK.equals(container) ? 1 : rows; }
     private int pagesOf(String container) { return DOCK.equals(container) ? dockPages : pages; }
 
+    /** The item covering a cell (a widget covers several), or null. */
     Item at(String container, int page, int x, int y) {
-        for (Item it : items) {
-            if (it.container.equals(container) && it.page == page && it.x == x && it.y == y) return it;
-        }
+        for (Item it : items) if (it.covers(container, page, x, y)) return it;
         return null;
     }
 
@@ -163,7 +191,7 @@ final class HomeLayout {
     /** Every key on the home screen, dock and in folders (for pinned-shortcut bookkeeping). */
     Set<String> allKeys() {
         Set<String> s = new HashSet<>();
-        for (Item it : items) if (!isFolderKey(it.key)) s.add(it.key);
+        for (Item it : items) if (!isFolderKey(it.key) && !isWidgetKey(it.key)) s.add(it.key);
         for (Folder f : folders.values()) s.addAll(f.apps);
         return s;
     }
@@ -182,6 +210,55 @@ final class HomeLayout {
         return null;
     }
 
+    /** Top-left {page, x, y} of the first free w×h area on home pages, preferred page first. */
+    int[] firstFreeArea(int preferredPage, int w, int h) {
+        for (int i = 0; i < pages; i++) {
+            int p = (Math.max(0, preferredPage) + i) % pages;
+            for (int y = 0; y + h <= rows; y++) {
+                for (int x = 0; x + w <= columns; x++) {
+                    if (areaFree(HOME, p, x, y, w, h, null)) return new int[] {p, x, y};
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Places a widget in the first free area big enough. Returns null when there's no room. */
+    Item addWidget(int widgetId, int preferredPage, int w, int h) {
+        w = Math.max(1, Math.min(columns, w));
+        h = Math.max(1, Math.min(rows, h));
+        int[] a = firstFreeArea(preferredPage, w, h);
+        if (a == null) return null;
+        Item it = new Item(WIDGET_PREFIX + widgetId, HOME, a[0], a[1], a[2]);
+        it.spanX = w;
+        it.spanY = h;
+        items.add(it);
+        save();
+        return it;
+    }
+
+    /** Changes a widget's size in place. Returns false if it wouldn't fit or the cells are taken. */
+    boolean resizeItem(Item it, int w, int h) {
+        if (w < 1 || h < 1 || it.x + w > columns || it.y + h > rows) return false;
+        if (!areaFree(it.container, it.page, it.x, it.y, w, h, it)) return false;
+        it.spanX = w;
+        it.spanY = h;
+        save();
+        return true;
+    }
+
+    static boolean isWidgetKey(String key) {
+        return key.startsWith(WIDGET_PREFIX);
+    }
+
+    static int widgetId(Item it) {
+        try {
+            return Integer.parseInt(it.key.substring(WIDGET_PREFIX.length()));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
     /** Puts the key in the first free cell. Returns false when there's no room. */
     boolean add(String key, String container, int preferredPage) {
         int[] cell = firstFree(container, preferredPage);
@@ -198,11 +275,24 @@ final class HomeLayout {
         save();
     }
 
-    /** Moves an item, possibly to the other container or page; if the target is taken, they swap. */
+    /**
+     * Moves an item, possibly to the other container or page; if the target is a
+     * single taken cell, the two swap. A widget only moves into free cells.
+     */
     void move(Item item, String container, int page, int x, int y) {
-        if (!fits(container, page, x, y)) return;
+        if (!fitsItem(item, container, page, x, y)) return;
+        if (item.spanX > 1 || item.spanY > 1) {
+            if (!areaFree(container, page, x, y, item.spanX, item.spanY, item)) return;
+            item.container = container;
+            item.page = page;
+            item.x = x;
+            item.y = y;
+            save();
+            return;
+        }
         Item other = at(container, page, x, y);
         if (other == item) return;
+        if (other != null && (other.spanX > 1 || other.spanY > 1)) return; // can't swap with a widget
         if (other != null) {
             other.container = item.container;
             other.page = item.page;
@@ -224,21 +314,35 @@ final class HomeLayout {
      */
     boolean insertAt(Item dragged, String key, String container, int page, int x, int y) {
         if (!fits(container, page, x, y)) return false;
-        int cols = cols(container), n = cols * rowsOf(container);
-        Item[] occ = new Item[n];
+        if (dragged != null && (dragged.spanX > 1 || dragged.spanY > 1)) return false;
+        int cols = cols(container), rws = rowsOf(container), n = cols * rws;
+        // Cells under widgets stay put; icons slide through the other cells only.
+        Item[] cell = new Item[n];
+        boolean[] blocked = new boolean[n];
         for (Item it : items) {
             if (it == dragged || !it.container.equals(container) || it.page != page) continue;
-            if (it.x < cols && it.y < rowsOf(container)) occ[it.y * cols + it.x] = it;
+            for (int dy = 0; dy < it.spanY; dy++) {
+                for (int dx = 0; dx < it.spanX; dx++) {
+                    int cx = it.x + dx, cy = it.y + dy;
+                    if (cx >= cols || cy >= rws) continue;
+                    if (it.spanX > 1 || it.spanY > 1) blocked[cy * cols + cx] = true;
+                    else cell[cy * cols + cx] = it;
+                }
+            }
         }
         int target = y * cols + x;
+        if (blocked[target]) return false;
+        List<Integer> seq = new ArrayList<>(); // the free-flowing cells, in reading order
+        for (int i = 0; i < n; i++) if (!blocked[i]) seq.add(i);
+        int t = seq.indexOf(target);
         int empty = -1;
-        for (int i = target; i < n; i++) if (occ[i] == null) { empty = i; break; }
+        for (int i = t; i < seq.size(); i++) if (cell[seq.get(i)] == null) { empty = i; break; }
         if (empty >= 0) {
-            for (int i = empty; i > target; i--) place(occ[i - 1], i, cols);
+            for (int i = empty; i > t; i--) place(cell[seq.get(i - 1)], seq.get(i), cols);
         } else {
-            for (int i = target; i >= 0; i--) if (occ[i] == null) { empty = i; break; }
+            for (int i = t; i >= 0; i--) if (cell[seq.get(i)] == null) { empty = i; break; }
             if (empty < 0) return false;
-            for (int i = empty; i < target; i++) place(occ[i + 1], i, cols);
+            for (int i = empty; i < t; i++) place(cell[seq.get(i + 1)], seq.get(i), cols);
         }
         if (dragged != null) {
             dragged.container = container;
@@ -424,13 +528,29 @@ final class HomeLayout {
         List<Item> placed = new ArrayList<>();
         List<Item> homeless = new ArrayList<>();
         for (Item it : items) {
-            if (fits(it.container, it.page, it.x, it.y) && !taken(placed, it.container, it.page, it.x, it.y)) {
+            if (fitsItem(it, it.container, it.page, it.x, it.y)
+                    && !taken(placed, it.container, it.page, it.x, it.y, it.spanX, it.spanY)) {
                 placed.add(it);
             } else {
                 homeless.add(it);
             }
         }
         for (Item it : homeless) {
+            if (it.spanX > 1 || it.spanY > 1) {
+                // A widget: shrink it to the grid if it's now bigger, then find room for it.
+                int w = Math.min(it.spanX, columns), h = Math.min(it.spanY, rows);
+                int[] a = freeAreaAmong(placed, Math.max(0, Math.min(it.page, pages - 1)), w, h);
+                if (a == null) continue; // waits, hidden, until there's room
+                it.container = HOME;
+                it.page = a[0];
+                it.x = a[1];
+                it.y = a[2];
+                it.spanX = w;
+                it.spanY = h;
+                placed.add(it);
+                moved = true;
+                continue;
+            }
             int[] cell = DOCK.equals(it.container) ? freeAmong(placed, DOCK, it.page) : null;
             String target = DOCK;
             if (cell == null) {
@@ -454,17 +574,27 @@ final class HomeLayout {
             int p = (Math.max(0, preferredPage) + i) % n;
             for (int y = 0; y < rowsOf(container); y++) {
                 for (int x = 0; x < cols(container); x++) {
-                    if (!taken(placed, container, p, x, y)) return new int[] {p, x, y};
+                    if (!taken(placed, container, p, x, y, 1, 1)) return new int[] {p, x, y};
                 }
             }
         }
         return null;
     }
 
-    private static boolean taken(List<Item> placed, String container, int page, int x, int y) {
-        for (Item p : placed) {
-            if (p.container.equals(container) && p.page == page && p.x == x && p.y == y) return true;
+    private int[] freeAreaAmong(List<Item> placed, int preferredPage, int w, int h) {
+        for (int i = 0; i < pages; i++) {
+            int p = (preferredPage + i) % pages;
+            for (int y = 0; y + h <= rows; y++) {
+                for (int x = 0; x + w <= columns; x++) {
+                    if (!taken(placed, HOME, p, x, y, w, h)) return new int[] {p, x, y};
+                }
+            }
         }
+        return null;
+    }
+
+    private static boolean taken(List<Item> placed, String container, int page, int x, int y, int w, int h) {
+        for (Item p : placed) if (p.overlaps(container, page, x, y, w, h)) return true;
         return false;
     }
 
@@ -474,12 +604,14 @@ final class HomeLayout {
     String toJsonString() throws JSONException {
         JSONArray arr = new JSONArray();
         for (Item it : items) {
-            arr.put(new JSONObject()
+            JSONObject o = new JSONObject()
                     .put("key", it.key)
                     .put("container", it.container)
                     .put("page", it.page)
                     .put("x", it.x)
-                    .put("y", it.y));
+                    .put("y", it.y);
+            if (it.spanX > 1 || it.spanY > 1) o.put("w", it.spanX).put("h", it.spanY);
+            arr.put(o);
         }
         JSONArray fs = new JSONArray();
         for (Folder f : folders.values()) {

@@ -21,10 +21,16 @@ public class CellLayout extends ViewGroup {
 
     public static class LayoutParams extends ViewGroup.LayoutParams {
         int cellX, cellY;
+        int spanX = 1, spanY = 1;
         public LayoutParams(int cellX, int cellY) {
             super(MATCH_PARENT, MATCH_PARENT);
             this.cellX = cellX;
             this.cellY = cellY;
+        }
+        public LayoutParams(int cellX, int cellY, int spanX, int spanY) {
+            this(cellX, cellY);
+            this.spanX = Math.max(1, spanX);
+            this.spanY = Math.max(1, spanY);
         }
     }
 
@@ -35,7 +41,7 @@ public class CellLayout extends ViewGroup {
     private int rows = 6;
     private int cellWidth, cellHeight;
 
-    private int hlX = -1, hlY = -1, hlMode = HL_NONE;
+    private int hlX = -1, hlY = -1, hlW = 1, hlH = 1, hlMode = HL_NONE;
     private final Paint hlFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint hlStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF hlRect = new RectF();
@@ -78,9 +84,16 @@ public class CellLayout extends ViewGroup {
     int cellHeight() { return cellHeight; }
 
     void setHighlight(int x, int y, int mode) {
-        if (x == hlX && y == hlY && mode == hlMode) return;
+        setHighlight(x, y, 1, 1, mode);
+    }
+
+    /** Highlights a w×h area (a widget's footprint). */
+    void setHighlight(int x, int y, int w, int h, int mode) {
+        if (x == hlX && y == hlY && w == hlW && h == hlH && mode == hlMode) return;
         hlX = x;
         hlY = y;
+        hlW = w;
+        hlH = h;
         hlMode = mode;
         invalidate();
     }
@@ -95,9 +108,12 @@ public class CellLayout extends ViewGroup {
         int h = MeasureSpec.getSize(heightSpec);
         cellWidth = (w - getPaddingLeft() - getPaddingRight()) / columns;
         cellHeight = (h - getPaddingTop() - getPaddingBottom()) / rows;
-        int cw = MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY);
-        int ch = MeasureSpec.makeMeasureSpec(cellHeight, MeasureSpec.EXACTLY);
-        for (int i = 0; i < getChildCount(); i++) getChildAt(i).measure(cw, ch);
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            LayoutParams lp = (LayoutParams) child.getLayoutParams();
+            child.measure(MeasureSpec.makeMeasureSpec(cellWidth * lp.spanX, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(cellHeight * lp.spanY, MeasureSpec.EXACTLY));
+        }
         setMeasuredDimension(w, h);
     }
 
@@ -108,7 +124,7 @@ public class CellLayout extends ViewGroup {
             LayoutParams lp = (LayoutParams) child.getLayoutParams();
             int left = getPaddingLeft() + lp.cellX * cellWidth;
             int top = getPaddingTop() + lp.cellY * cellHeight;
-            child.layout(left, top, left + cellWidth, top + cellHeight);
+            child.layout(left, top, left + cellWidth * lp.spanX, top + cellHeight * lp.spanY);
         }
     }
 
@@ -117,7 +133,7 @@ public class CellLayout extends ViewGroup {
         if (hlMode != HL_NONE && hlX >= 0 && cellWidth > 0) {
             float d = getResources().getDisplayMetrics().density;
             float left = getPaddingLeft() + hlX * cellWidth, top = getPaddingTop() + hlY * cellHeight;
-            hlRect.set(left + 4 * d, top + 4 * d, left + cellWidth - 4 * d, top + cellHeight - 4 * d);
+            hlRect.set(left + 4 * d, top + 4 * d, left + cellWidth * hlW - 4 * d, top + cellHeight * hlH - 4 * d);
             float r = 16 * d;
             switch (hlMode) {
                 case HL_FOLDER: // ring: "drop to make a folder / join it"

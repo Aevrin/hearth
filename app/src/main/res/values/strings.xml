@@ -205,4 +205,18 @@
     <string name="g_open_named">Open %1$s</string>
     <string name="gesture_app_missing">That app isn\'t installed any more</string>
     <string name="gesture_shade_failed">This phone didn\'t let Hearth open the notification shade</string>
+
+    <!-- Widgets -->
+    <string name="widgets">Widgets</string>
+    <string name="widget_search">Search widgets</string>
+    <string name="widget_none">No widgets match.</string>
+    <string name="widget_size">%1$d × %2$d</string>
+    <string name="widget_no_room">No room for that widget. Free some space or add a page.</string>
+    <string name="widget_failed">Couldn\'t add that widget</string>
+    <string name="widget_unavailable">Widget unavailable. Long-press to remove.</string>
+    <string name="widget_resize">Resize</string>
+    <string name="widget_settings">Widget settings</string>
+    <string name="widget_width">Width</string>
+    <string name="widget_height">Height</string>
+    <string name="widget_resize_no_room">Not enough free space around it for that size. Move things out of the way first.</string>
 </resources>

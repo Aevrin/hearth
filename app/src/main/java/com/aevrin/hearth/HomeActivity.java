@@ -8,6 +8,8 @@ import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.WallpaperManager;
+import android.appwidget.AppWidgetManager;
+import android.appwidget.AppWidgetProviderInfo;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
@@ -57,7 +59,9 @@ import android.window.OnBackInvokedDispatcher;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The home screen: a clock, pages of apps, shortcuts and folders, and a dock,
@@ -71,12 +75,20 @@ public class HomeActivity extends Activity
 
     private static final long EDGE_PAGE_DELAY_MS = 550;
     private static final int MENU_SHORTCUT_BASE = 1000;
+    private static final int REQ_WIDGET_BIND = 21, REQ_WIDGET_CONFIGURE = 22, REQ_WIDGET_RECONFIGURE = 23;
 
     private AppRepository repo;
     private HomeLayout layout;
     private Prefs prefs;
     private FolderPanel folders;
     private WallpaperManager wallpaper;
+    private WidgetHost widgetHost;
+    private AppWidgetManager widgetManager;
+    /** Widget views are kept and reused across refreshes, so they don't reload. */
+    private final Map<Integer, WidgetHost.View> widgetViews = new HashMap<>();
+    // A widget being added: waiting on the bind permission or its setup screen.
+    private int pendingWidgetId = -1;
+    private int pendingWidgetPage;
 
     private View homeContent;
     private View clock;
@@ -123,6 +135,7 @@ public class HomeActivity extends Activity
         final View view;
         final boolean fromDrawer;
         float startX, startY;       // screen coordinates where the drag began
+        int grabX, grabY;           // which cell of a widget the finger is on
         boolean movedFar;
         DragState(HomeLayout.Item item, String key, AppEntry app, View view, boolean fromDrawer) {
             this.item = item; this.key = key; this.app = app; this.view = view; this.fromDrawer = fromDrawer;
@@ -135,6 +148,12 @@ public class HomeActivity extends Activity
         setContentView(R.layout.activity_home);
         prefs = new Prefs(this);
         wallpaper = WallpaperManager.getInstance(this);
+        widgetHost = new WidgetHost(this);
+        widgetManager = AppWidgetManager.getInstance(this);
+        if (savedInstanceState != null) {
+            pendingWidgetId = savedInstanceState.getInt("pending_widget", -1);
+            pendingWidgetPage = savedInstanceState.getInt("pending_widget_page", 0);
+        }
 
         homeContent = findViewById(R.id.home_content);
         clock = findViewById(R.id.clock);
@@ -243,7 +262,33 @@ public class HomeActivity extends Activity
 
         currentPage = prefs.defaultPage();
         reloadConfig();
+        deleteOrphanWidgets();
         repo.reload();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        try {
+            widgetHost.startListening(); // widgets update while Hearth is visible
+        } catch (RuntimeException ignored) {
+            // can fail briefly while the system is starting up
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        try {
+            widgetHost.stopListening();
+        } catch (RuntimeException ignored) { }
+        super.onStop();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putInt("pending_widget", pendingWidgetId);
+        out.putInt("pending_widget_page", pendingWidgetPage);
     }
 
     @Override
@@ -536,14 +581,19 @@ public class HomeActivity extends Activity
         int gridIcon = fitIcon(grid, homeIconPx, homeLabels);
         int dockIcon = fitIcon(dock, dockIconPx, false);
         for (HomeLayout.Item item : layout.items()) {
-            if (!layout.fits(item.container, item.page, item.x, item.y)) continue; // waiting for room
+            if (!layout.fitsItem(item, item.container, item.page, item.x, item.y)) continue; // waiting for room
             boolean inDock = HomeLayout.DOCK.equals(item.container);
             if (item.page != (inDock ? currentDockPage : currentPage)) continue;
             CellLayout parent = inDock ? dock : grid;
             boolean label = !inDock && homeLabels;
             View v;
             HomeLayout.Folder folder = layout.folder(item);
-            if (folder != null) {
+            if (HomeLayout.isWidgetKey(item.key)) {
+                v = widgetView(item);
+                v.setOnLongClickListener(view -> { onItemLongPress(item, view); return true; });
+                grid.addView(v, new CellLayout.LayoutParams(item.x, item.y, item.spanX, item.spanY));
+                continue;
+            } else if (folder != null) {
                 v = makeFolderIcon(folder, parent, label, inDock ? dockIcon : gridIcon);
                 v.setOnClickListener(view -> folders.show(folder, view));
             } else {
@@ -708,6 +758,12 @@ public class HomeActivity extends Activity
     private void startDrag(DragState st) {
         st.startX = lastTouchX;
         st.startY = lastTouchY;
+        if (st.item != null && isBig(st.item) && grid.cellWidth() > 0) {
+            int[] loc = new int[2];
+            st.view.getLocationOnScreen(loc);
+            st.grabX = Math.max(0, Math.min(st.item.spanX - 1, (int) ((st.startX - loc[0]) / grid.cellWidth())));
+            st.grabY = Math.max(0, Math.min(st.item.spanY - 1, (int) ((st.startY - loc[1]) / grid.cellHeight())));
+        }
         ClipData data = ClipData.newPlainText("hearth", st.key);
         if (!st.view.startDragAndDrop(data, new View.DragShadowBuilder(st.view), st, 0)) return;
         if (!st.fromDrawer) st.view.setVisibility(View.INVISIBLE);
@@ -721,9 +777,19 @@ public class HomeActivity extends Activity
     private int[] dropPlan(CellLayout target, String container, DragState st, float x, float y) {
         int page = HomeLayout.HOME.equals(container) ? currentPage : currentDockPage;
         int[] cell = target.cellAt(x, y);
+        if (st.item != null && isBig(st.item)) {
+            // A widget: its top-left follows the finger; it only goes where it fits in free cells.
+            int tx = Math.max(0, Math.min(layout.columns() - st.item.spanX, cell[0] - st.grabX));
+            int ty = Math.max(0, Math.min(layout.rows() - st.item.spanY, cell[1] - st.grabY));
+            boolean ok = HomeLayout.HOME.equals(container)
+                    && layout.fitsItem(st.item, container, page, tx, ty)
+                    && layout.areaFree(container, page, tx, ty, st.item.spanX, st.item.spanY, st.item);
+            return new int[] {ok ? CellLayout.HL_MOVE : CellLayout.HL_NONE, tx, ty, page};
+        }
         HomeLayout.Item other = layout.at(container, page, cell[0], cell[1]);
         int mode;
-        if (other == null || other == st.item) mode = CellLayout.HL_MOVE;
+        if (other != null && other != st.item && isBig(other)) mode = CellLayout.HL_NONE; // over a widget
+        else if (other == null || other == st.item) mode = CellLayout.HL_MOVE;
         else if (HomeLayout.isFolderKey(st.key)) mode = CellLayout.HL_INSERT; // folders don't nest
         else if (target.nearCellCentre(x, y)) mode = CellLayout.HL_FOLDER;
         else mode = CellLayout.HL_INSERT;
@@ -740,7 +806,8 @@ public class HomeActivity extends Activity
             case DragEvent.ACTION_DRAG_LOCATION: {
                 if (target == grid) checkEdge(e.getX());
                 int[] plan = dropPlan(target, container, st, e.getX(), e.getY());
-                target.setHighlight(plan[1], plan[2], plan[0]);
+                boolean big = st.item != null && isBig(st.item);
+                target.setHighlight(plan[1], plan[2], big ? st.item.spanX : 1, big ? st.item.spanY : 1, plan[0]);
                 return true;
             }
             case DragEvent.ACTION_DRAG_EXITED:
@@ -753,7 +820,11 @@ public class HomeActivity extends Activity
                 int[] plan = dropPlan(target, container, st, e.getX(), e.getY());
                 int x = plan[1], y = plan[2], page = plan[3];
                 HomeLayout.Item other = layout.at(container, page, x, y);
-                if (st.item != null && other == st.item) {
+                if (plan[0] == CellLayout.HL_NONE) {
+                    // nowhere to put it here: it goes back where it was
+                } else if (st.item != null && isBig(st.item)) {
+                    layout.move(st.item, container, page, x, y);
+                } else if (st.item != null && other == st.item) {
                     // put back where it was: nothing to do
                 } else if (plan[0] == CellLayout.HL_MOVE) {
                     if (st.item != null) layout.move(st.item, container, page, x, y);
@@ -780,7 +851,7 @@ public class HomeActivity extends Activity
             case DragEvent.ACTION_DRAG_ENTERED: target.setActivated(true); return true;
             case DragEvent.ACTION_DRAG_EXITED: target.setActivated(false); return true;
             case DragEvent.ACTION_DROP:
-                if (target == dropRemove && st.item != null) layout.remove(st.item);
+                if (target == dropRemove && st.item != null) removeItem(st.item);
                 else if (target == dropInfo && st.app != null) repo.openAppInfo(st.app, st.view);
                 else if (target == dropUninstall && st.app != null) repo.uninstall(this, st.app);
                 return true;
@@ -834,6 +905,7 @@ public class HomeActivity extends Activity
 
     /** Menu for something on the home screen or dock. */
     private PopupMenu showItemMenu(HomeLayout.Item item, View anchor) {
+        if (HomeLayout.isWidgetKey(item.key)) return showWidgetMenu(item, anchor);
         HomeLayout.Folder folder = layout.folder(item);
         if (folder != null) return showFolderMenu(item, folder, anchor);
         AppEntry app = repo.find(item.key);
@@ -963,6 +1035,7 @@ public class HomeActivity extends Activity
         m.add(0, 1, 0, R.string.open_drawer);
         m.add(0, 2, 1, R.string.wallpaper);
         m.add(0, 3, 2, R.string.settings);
+        if (!locked) m.add(0, 5, 3, R.string.widgets);
         if (!locked) {
             SubMenu pages = m.addSubMenu(0, 0, 3, R.string.pages);
             pages.add(1, 10, 0, R.string.page_add);
@@ -977,6 +1050,7 @@ public class HomeActivity extends Activity
                 case 1: openDrawer(); return true;
                 case 2: pickWallpaper(); return true;
                 case 3: startActivity(new Intent(this, SettingsActivity.class)); return true;
+                case 5: pickWidget(); return true;
                 case 4:
                     prefs.setLockLayout(!locked);
                     Toast.makeText(this, locked ? R.string.layout_unlocked : R.string.layout_locked, Toast.LENGTH_SHORT).show();
@@ -993,6 +1067,263 @@ public class HomeActivity extends Activity
             }
         });
         menu.show();
+    }
+
+    /* ---------- widgets ---------- */
+
+    private static boolean isBig(HomeLayout.Item it) {
+        return it.spanX > 1 || it.spanY > 1;
+    }
+
+    /** Removes anything from the home screen; a widget also gives up its widget id. */
+    private void removeItem(HomeLayout.Item item) {
+        if (HomeLayout.isWidgetKey(item.key)) {
+            int id = HomeLayout.widgetId(item);
+            widgetViews.remove(id);
+            if (id >= 0) widgetHost.deleteAppWidgetId(id);
+        }
+        layout.remove(item);
+    }
+
+    // Widget ids the system still holds for Hearth but the layout no longer uses
+    // (removed while Hearth wasn't running, or left by an interrupted add).
+    private void deleteOrphanWidgets() {
+        int[] ids = widgetHost.getAppWidgetIds();
+        if (ids == null) return;
+        for (int id : ids) {
+            if (id == pendingWidgetId) continue;
+            if (!layout.contains(HomeLayout.WIDGET_PREFIX + id)) widgetHost.deleteAppWidgetId(id);
+        }
+    }
+
+    /** Cells a widget wants, from its own declared size. */
+    private int spanX(AppWidgetProviderInfo info) {
+        if (info.targetCellWidth > 0) return Math.min(layout.columns(), info.targetCellWidth);
+        return cellsFor(info.minWidth, grid.cellWidth(), layout.columns());
+    }
+
+    private int spanY(AppWidgetProviderInfo info) {
+        if (info.targetCellHeight > 0) return Math.min(layout.rows(), info.targetCellHeight);
+        return cellsFor(info.minHeight, grid.cellHeight(), layout.rows());
+    }
+
+    private int cellsFor(int px, int cell, int max) {
+        if (cell <= 0) cell = Math.round(dp(80));
+        return Math.max(1, Math.min(max, (int) Math.ceil(px / (double) cell)));
+    }
+
+    private void pickWidget() {
+        new WidgetPicker(this, this::spanX, this::spanY).show(this::addWidget);
+    }
+
+    // Allocate an id, ask permission to bind if needed, run the widget's setup if
+    // it has one, then place it.
+    private void addWidget(AppWidgetProviderInfo info) {
+        int id = widgetHost.allocateAppWidgetId();
+        pendingWidgetId = id;
+        pendingWidgetPage = currentPage;
+        if (widgetManager.bindAppWidgetIdIfAllowed(id, info.getProfile(), info.provider, null)) {
+            configureOrPlace(id);
+            return;
+        }
+        Intent bind = new Intent(AppWidgetManager.ACTION_APPWIDGET_BIND)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE, info.getProfile());
+        try {
+            startActivityForResult(bind, REQ_WIDGET_BIND);
+        } catch (ActivityNotFoundException e) {
+            abandonWidget();
+        }
+    }
+
+    private void configureOrPlace(int id) {
+        AppWidgetProviderInfo info = widgetManager.getAppWidgetInfo(id);
+        if (info == null) {
+            abandonWidget();
+            return;
+        }
+        boolean optional = (info.widgetFeatures & AppWidgetProviderInfo.WIDGET_FEATURE_CONFIGURATION_OPTIONAL) != 0;
+        if (info.configure != null && !optional) {
+            try {
+                widgetHost.startAppWidgetConfigureActivityForResult(this, id, 0, REQ_WIDGET_CONFIGURE, null);
+                return;
+            } catch (ActivityNotFoundException | SecurityException e) {
+                abandonWidget();
+                return;
+            }
+        }
+        placeWidget(id);
+    }
+
+    private void placeWidget(int id) {
+        AppWidgetProviderInfo info = widgetManager.getAppWidgetInfo(id);
+        pendingWidgetId = -1;
+        if (info == null) {
+            widgetHost.deleteAppWidgetId(id);
+            return;
+        }
+        HomeLayout.Item it = layout.addWidget(id, pendingWidgetPage, spanX(info), spanY(info));
+        if (it == null) {
+            widgetHost.deleteAppWidgetId(id);
+            Toast.makeText(this, R.string.widget_no_room, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (it.page != currentPage) animateToPage(it.page);
+        else refreshHome();
+    }
+
+    private void abandonWidget() {
+        if (pendingWidgetId >= 0) widgetHost.deleteAppWidgetId(pendingWidgetId);
+        pendingWidgetId = -1;
+        Toast.makeText(this, R.string.widget_failed, Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_WIDGET_RECONFIGURE) return; // the widget updates itself
+        if (requestCode != REQ_WIDGET_BIND && requestCode != REQ_WIDGET_CONFIGURE) return;
+        int id = pendingWidgetId;
+        if (id < 0) return;
+        if (resultCode != RESULT_OK) {
+            widgetHost.deleteAppWidgetId(id); // cancelled: let the id go quietly
+            pendingWidgetId = -1;
+            return;
+        }
+        if (requestCode == REQ_WIDGET_BIND) configureOrPlace(id);
+        else placeWidget(id);
+    }
+
+    /** The view for a widget item: reused if we have it, a placeholder if the widget's gone. */
+    private View widgetView(HomeLayout.Item item) {
+        int id = HomeLayout.widgetId(item);
+        AppWidgetProviderInfo info = id < 0 ? null : widgetManager.getAppWidgetInfo(id);
+        if (info == null) {
+            // Restored from a backup on another install, or its app was uninstalled.
+            TextView t = new TextView(this);
+            t.setText(R.string.widget_unavailable);
+            t.setGravity(Gravity.CENTER);
+            t.setTextColor(0xCCE6F0FF);
+            t.setPadding(Math.round(dp(8)), 0, Math.round(dp(8)), 0);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Prefs.background(50));
+            bg.setCornerRadius(dp(16));
+            t.setBackground(bg);
+            return t;
+        }
+        WidgetHost.View v = widgetViews.get(id);
+        if (v == null) {
+            v = (WidgetHost.View) widgetHost.createView(getApplicationContext(), id, info);
+            WidgetHost.View view = v;
+            // Tell the widget its real size whenever it changes, so it can pick a layout.
+            v.addOnLayoutChangeListener((x, l, t, r, b, ol, ot, or, ob) -> {
+                if (r - l == or - ol && b - t == ob - ot) return;
+                float d = getResources().getDisplayMetrics().density;
+                android.util.SizeF size = new android.util.SizeF((r - l) / d, (b - t) / d);
+                view.updateAppWidgetSize(new Bundle(), java.util.Collections.singletonList(size));
+            });
+            widgetViews.put(id, v);
+        }
+        if (v.getParent() instanceof ViewGroup) ((ViewGroup) v.getParent()).removeView(v);
+        v.setVisibility(View.VISIBLE);
+        return v;
+    }
+
+    private PopupMenu showWidgetMenu(HomeLayout.Item item, View anchor) {
+        boolean locked = prefs.lockLayout();
+        int id = HomeLayout.widgetId(item);
+        AppWidgetProviderInfo info = id < 0 ? null : widgetManager.getAppWidgetInfo(id);
+        boolean reconfigurable = info != null && info.configure != null
+                && (info.widgetFeatures & AppWidgetProviderInfo.WIDGET_FEATURE_RECONFIGURABLE) != 0;
+        PopupMenu menu = new PopupMenu(this, anchor);
+        Menu m = menu.getMenu();
+        if (!locked && info != null && info.resizeMode != AppWidgetProviderInfo.RESIZE_NONE) m.add(0, 1, 0, R.string.widget_resize);
+        if (reconfigurable) m.add(0, 2, 1, R.string.widget_settings);
+        if (!locked) m.add(0, 3, 2, R.string.remove_from_home);
+        if (m.size() == 0) return null;
+        menu.setOnMenuItemClickListener(mi -> {
+            switch (mi.getItemId()) {
+                case 1: resizeWidget(item, info); return true;
+                case 2:
+                    try {
+                        widgetHost.startAppWidgetConfigureActivityForResult(this, id, 0, REQ_WIDGET_RECONFIGURE, null);
+                    } catch (ActivityNotFoundException | SecurityException e) {
+                        Toast.makeText(this, R.string.widget_failed, Toast.LENGTH_SHORT).show();
+                    }
+                    return true;
+                case 3: removeItem(item); refreshHome(); return true;
+                default: return false;
+            }
+        });
+        menu.show();
+        return menu;
+    }
+
+    /** Width and height steppers, limited by the widget's own minimums and the free space. */
+    private void resizeWidget(HomeLayout.Item item, AppWidgetProviderInfo info) {
+        boolean horiz = (info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0;
+        boolean vert = (info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0;
+        int minW = horiz ? cellsFor(Math.max(1, info.minResizeWidth), grid.cellWidth(), layout.columns()) : item.spanX;
+        int minH = vert ? cellsFor(Math.max(1, info.minResizeHeight), grid.cellHeight(), layout.rows()) : item.spanY;
+        int maxW = horiz ? (info.maxResizeWidth > 0
+                ? cellsFor(info.maxResizeWidth, grid.cellWidth(), layout.columns()) : layout.columns()) : item.spanX;
+        int maxH = vert ? (info.maxResizeHeight > 0
+                ? cellsFor(info.maxResizeHeight, grid.cellHeight(), layout.rows()) : layout.rows()) : item.spanY;
+        int[] size = {item.spanX, item.spanY};
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = Math.round(dp(24));
+        box.setPadding(pad, Math.round(dp(8)), pad, 0);
+        if (horiz) box.addView(sizeStepper(R.string.widget_width, size, 0, Math.min(minW, item.spanX), Math.max(maxW, item.spanX)));
+        if (vert) box.addView(sizeStepper(R.string.widget_height, size, 1, Math.min(minH, item.spanY), Math.max(maxH, item.spanY)));
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.widget_resize)
+                .setView(box)
+                .setPositiveButton(R.string.save, (d, w) -> {
+                    if (size[0] == item.spanX && size[1] == item.spanY) return;
+                    if (layout.resizeItem(item, size[0], size[1])) refreshHome();
+                    else Toast.makeText(this, R.string.widget_resize_no_room, Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private View sizeStepper(int label, int[] size, int index, int min, int max) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(Math.round(dp(52)));
+        TextView l = new TextView(this);
+        l.setText(label);
+        l.setTextSize(16);
+        l.setTextColor(0xFFE6F0FF);
+        row.addView(l, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView minus = new TextView(this), value = new TextView(this), plus = new TextView(this);
+        for (TextView b : new TextView[] {minus, plus}) {
+            b.setTextSize(22);
+            b.setGravity(Gravity.CENTER);
+            b.setTextColor(prefs.accent());
+            b.setBackgroundResource(android.R.drawable.list_selector_background);
+        }
+        minus.setText("−");
+        plus.setText("+");
+        value.setTextSize(16);
+        value.setGravity(Gravity.CENTER);
+        value.setTextColor(0xFFE6F0FF);
+        Runnable sync = () -> {
+            value.setText(String.valueOf(size[index]));
+            minus.setAlpha(size[index] > min ? 1f : 0.3f);
+            plus.setAlpha(size[index] < max ? 1f : 0.3f);
+        };
+        minus.setOnClickListener(v -> { if (size[index] > min) { size[index]--; sync.run(); } });
+        plus.setOnClickListener(v -> { if (size[index] < max) { size[index]++; sync.run(); } });
+        sync.run();
+        int b = Math.round(dp(44));
+        row.addView(minus, new LinearLayout.LayoutParams(b, b));
+        row.addView(value, new LinearLayout.LayoutParams(Math.round(dp(36)), LinearLayout.LayoutParams.WRAP_CONTENT));
+        row.addView(plus, new LinearLayout.LayoutParams(b, b));
+        return row;
     }
 
     private void pickWallpaper() {

@@ -12,7 +12,7 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 - Free software under the [GNU GPL v3 or later](LICENSE).
 - Android 13+.
 
-## Status: 0.6 (gradient accent, settings pages)
+## Status: 0.7 (widgets)
 
 | Phase | Scope | State |
 |---|---|---|
@@ -21,9 +21,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 | 3 | Configuration: grid, pages, icons, labels, renaming, hidden apps, clock, backup | Done (gestures later) |
 | 4 | Generated icon themes, per-app icon styles, folders | Done |
 | 0.5 | App shortcuts, drag from drawer, smarter drops, page management, label styling | Done |
-| 0.6 | Gradient accent colour, Settings split into pages | **In testing** |
+| 0.6 | Gradient accent colour, Settings split into pages, gestures | Done |
 | 4b | Notification dots, icon packs (maybe) | Planned |
-| 5 | Widgets | Planned |
+| 5 | Widgets | **In testing** |
 
 ### What works now
 
@@ -53,6 +53,16 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   so they just change page. Sideways gestures only run when there's no page that way. Choices:
   nothing, app drawer, search apps (drawer with keyboard), notifications, quick settings, Hearth
   settings, or open any app.
+- **Widgets:** long-press empty space → **Widgets** for every installed widget, grouped by app with
+  previews, sizes and a search box. Hearth places it in the first free space big enough (on the
+  current page first), running the widget's own setup screen if it has one. The first time you add
+  a widget from an app, Android asks whether Hearth may create widgets.
+  - Long-press a widget for **Resize** (width and height in cells, within the widget's own limits),
+    **Widget settings** (for widgets that support it) and **Remove**; keep holding and move to drag
+    it. It only drops where all its cells are free; the highlight shows its whole footprint.
+  - Icons slide around widgets, never through them. Widgets live on home pages only (not the dock
+    or folders). A widget whose app was uninstalled, or one restored from a backup on another
+    phone, shows as "Widget unavailable" until you remove it.
 - **Dock:** label-less icons on a translucent bar, with up to three **dock pages** you swipe
   across the dock itself. When the dock is hidden, an arrow at the bottom opens the drawer.
 - **App drawer:** swipe up anywhere on the home screen.
@@ -89,7 +99,6 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 ### Roadmap / ideas
 
 - Notification dots; maybe icon packs.
-- Widgets.
 - More gestures (double-tap, two-finger swipes).
 - **A web page as a home screen:** a page of the home screen (or its own screen) that shows a
   chosen web page, such as a self-hosted dashboard. This needs the internet permission, so it
@@ -97,6 +106,10 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 - Lots of small visual polish.
 
 The home, dock and folder layout is saved as readable JSON in the app's private storage (`files/home.json`).
+
+## Privacy
+
+Hearth collects nothing and has no internet permission. See the [privacy policy](PRIVACY.md).
 
 ## Try it
 
