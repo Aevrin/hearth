@@ -6,7 +6,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 > human direction, review and on-device testing. It is not the work of an experienced
 > Android team. Read the code before trusting it, and expect rough edges.
 
-- No ads, no analytics, no accounts, and **no internet permission**.
+- No ads, no analytics, no accounts, and **no internet permission**. The only permissions are
+  asking to uninstall apps (when you choose Uninstall) and expanding the status bar (for the
+  swipe-down gesture); both are granted at install with no prompt.
 - Free software under the [GNU GPL v3 or later](LICENSE).
 - Android 13+.
 
@@ -44,6 +46,11 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - Swipe sideways to change page; the wallpaper scrolls with you (optional). Home returns to your
     default page.
   - Tap the clock to open your alarms.
+- **Gestures** on the home screen, each configurable (Settings → Gestures): swipe **up** opens the
+  drawer, swipe **down** pulls down the notification shade; **left / right** do nothing by default,
+  so they just change page. Sideways gestures only run when there's no page that way. Choices:
+  nothing, app drawer, search apps (drawer with keyboard), notifications, quick settings, Hearth
+  settings, or open any app.
 - **Dock:** label-less icons on a translucent bar, with up to three **dock pages** you swipe
   across the dock itself. When the dock is hidden, an arrow at the bottom opens the drawer.
 - **App drawer:** swipe up anywhere on the home screen.
@@ -81,7 +88,7 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
 
 - Notification dots; maybe icon packs.
 - Widgets.
-- Gestures (double-tap to lock, swipe down for notifications).
+- More gestures (double-tap, two-finger swipes).
 - **A web page as a home screen:** a page of the home screen (or its own screen) that shows a
   chosen web page, such as a self-hosted dashboard. This needs the internet permission, so it
   would be opt-in, possibly as a separate build.

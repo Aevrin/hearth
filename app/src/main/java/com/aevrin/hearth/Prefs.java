@@ -77,6 +77,16 @@ final class Prefs {
     static final String DOCK_PAGES = "dock_pages";
     static final String AZ_SCROLLER = "az_scroller";
     static final String MOST_USED = "most_used";
+    static final String GESTURE_UP = "gesture_up";
+    static final String GESTURE_DOWN = "gesture_down";
+    static final String GESTURE_LEFT = "gesture_left";
+    static final String GESTURE_RIGHT = "gesture_right";
+
+    /** Gesture actions. Also "app:<key>" to open a particular app. */
+    static final String G_NONE = "none", G_DRAWER = "drawer", G_SEARCH = "search",
+            G_NOTIFICATIONS = "notifications", G_QUICK_SETTINGS = "quick_settings", G_SETTINGS = "settings";
+    static final String G_APP_PREFIX = "app:";
+    static final String[] GESTURE_ACTIONS = {G_NONE, G_DRAWER, G_SEARCH, G_NOTIFICATIONS, G_QUICK_SETTINGS, G_SETTINGS};
     private static final String LAUNCH_COUNTS = "launch_counts"; // not backed up: usage, not settings
     private static final String HOME_PROMPT_SHOWN = "home_prompt_shown"; // not backed up
 
@@ -191,6 +201,19 @@ final class Prefs {
     void setAzScroller(boolean v) { sp.edit().putBoolean(AZ_SCROLLER, v).apply(); }
 
     boolean mostUsed() { return sp.getBoolean(MOST_USED, true); }
+
+    /** What a swipe does: one of GESTURE_ACTIONS, or "app:<key>". */
+    String gesture(String which) {
+        String def = GESTURE_UP.equals(which) ? G_DRAWER : GESTURE_DOWN.equals(which) ? G_NOTIFICATIONS : G_NONE;
+        return sp.getString(which, def);
+    }
+    void setGesture(String which, String action) { sp.edit().putString(which, action).apply(); }
+
+    private static boolean validGesture(String a) {
+        if (a.startsWith(G_APP_PREFIX)) return a.length() > G_APP_PREFIX.length();
+        for (String g : GESTURE_ACTIONS) if (g.equals(a)) return true;
+        return false;
+    }
     void setMostUsed(boolean v) { sp.edit().putBoolean(MOST_USED, v).apply(); }
 
     /** Counts launches made from Hearth itself; no usage-access permission involved. */
@@ -365,6 +388,7 @@ final class Prefs {
         o.put(DOCK_PAGES, dockPages());
         o.put(AZ_SCROLLER, azScroller());
         o.put(MOST_USED, mostUsed());
+        for (String g : new String[] {GESTURE_UP, GESTURE_DOWN, GESTURE_LEFT, GESTURE_RIGHT}) o.put(g, gesture(g));
         return o;
     }
 
@@ -387,6 +411,11 @@ final class Prefs {
                 case ACCENT_GRADIENT:
                     e.putBoolean(k, o.getBoolean(k));
                     break;
+                case GESTURE_UP: case GESTURE_DOWN: case GESTURE_LEFT: case GESTURE_RIGHT: {
+                    String g = o.getString(k);
+                    if (validGesture(g)) e.putString(k, g);
+                    break;
+                }
                 case CLOCK_FORMAT:
                     String f = o.getString(k);
                     if (f.equals(CLOCK_SYSTEM) || f.equals(CLOCK_12) || f.equals(CLOCK_24)) e.putString(k, f);

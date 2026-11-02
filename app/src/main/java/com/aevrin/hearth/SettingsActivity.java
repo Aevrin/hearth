@@ -53,7 +53,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
 
     // Pages. MAIN lists the others.
     private static final int MAIN = 0, APPEARANCE = 1, ICONS = 2, LABELS = 3, CLOCK = 4,
-            HOME = 5, DOCK = 6, DRAWER = 7, BACKUP = 8;
+            HOME = 5, DOCK = 6, DRAWER = 7, BACKUP = 8, GESTURES = 9;
 
     private Prefs prefs;
     private AppRepository repo;
@@ -159,6 +159,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             case DOCK: buildDock(); break;
             case DRAWER: buildDrawer(); break;
             case BACKUP: buildBackup(); break;
+            case GESTURES: buildGestures(); break;
             default: buildMain(); break;
         }
         scroll.post(() -> scroll.scrollTo(0, scrollY));
@@ -174,6 +175,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
             case DOCK: return R.string.section_dock;
             case DRAWER: return R.string.section_drawer;
             case BACKUP: return R.string.section_backup;
+            case GESTURES: return R.string.section_gestures;
             default: return R.string.settings;
         }
     }
@@ -192,6 +194,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         category(HOME, R.string.summary_home_screen);
         category(DOCK, R.string.summary_dock);
         category(DRAWER, R.string.summary_drawer);
+        category(GESTURES, R.string.summary_gestures);
         category(BACKUP, R.string.summary_backup);
 
         header(R.string.section_about);
@@ -305,6 +308,95 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         lp.setMarginEnd(dp(12));
         row.addView(export, lp);
         row.addView(restore);
+    }
+
+    private void buildGestures() {
+        gestureRow(R.string.gesture_up, Prefs.GESTURE_UP);
+        gestureRow(R.string.gesture_down, Prefs.GESTURE_DOWN);
+        gestureRow(R.string.gesture_left, Prefs.GESTURE_LEFT);
+        gestureRow(R.string.gesture_right, Prefs.GESTURE_RIGHT);
+        note(R.string.gesture_note);
+    }
+
+    private static final int[] GESTURE_NAMES = {R.string.g_none, R.string.g_drawer, R.string.g_search,
+            R.string.g_notifications, R.string.g_quick_settings, R.string.g_settings};
+
+    private String gestureName(String action) {
+        if (action.startsWith(Prefs.G_APP_PREFIX)) {
+            AppEntry e = repo.find(action.substring(Prefs.G_APP_PREFIX.length()));
+            String name = e == null ? "?" : (prefs.customLabel(e.key) != null ? prefs.customLabel(e.key) : e.label);
+            return getString(R.string.g_open_named, name);
+        }
+        for (int i = 0; i < Prefs.GESTURE_ACTIONS.length; i++) {
+            if (Prefs.GESTURE_ACTIONS[i].equals(action)) return getString(GESTURE_NAMES[i]);
+        }
+        return getString(R.string.g_none);
+    }
+
+    /** "Swipe up — App drawer"; tap to choose. */
+    private void gestureRow(int label, String which) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setMinimumHeight(dp(60));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackgroundResource(android.R.drawable.list_selector_background);
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextColor(getColor(R.color.text_primary));
+        t.setTextSize(16);
+        TextView v = new TextView(this);
+        v.setText(gestureName(prefs.gesture(which)));
+        v.setTextColor(prefs.accent());
+        v.setTextSize(14);
+        row.addView(t);
+        row.addView(v);
+        row.setOnClickListener(x -> pickGesture(label, which));
+        LinearLayout.LayoutParams lp = matchWrap();
+        lp.topMargin = dp(4);
+        content.addView(row, lp);
+    }
+
+    private void pickGesture(int label, String which) {
+        String current = prefs.gesture(which);
+        String[] names = new String[GESTURE_NAMES.length + 1];
+        int checked = GESTURE_NAMES.length; // "Open an app…" when it's an app
+        for (int i = 0; i < GESTURE_NAMES.length; i++) {
+            names[i] = getString(GESTURE_NAMES[i]);
+            if (Prefs.GESTURE_ACTIONS[i].equals(current)) checked = i;
+        }
+        names[GESTURE_NAMES.length] = current.startsWith(Prefs.G_APP_PREFIX)
+                ? gestureName(current) : getString(R.string.g_open_app);
+        new AlertDialog.Builder(this)
+                .setTitle(label)
+                .setSingleChoiceItems(names, checked, (d, i) -> {
+                    d.dismiss();
+                    if (i < GESTURE_NAMES.length) {
+                        prefs.setGesture(which, Prefs.GESTURE_ACTIONS[i]);
+                        build();
+                    } else {
+                        pickGestureApp(label, which);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void pickGestureApp(int label, String which) {
+        List<AppEntry> apps = repo.apps();
+        if (apps.isEmpty()) return;
+        String[] names = new String[apps.size()];
+        for (int i = 0; i < apps.size(); i++) {
+            AppEntry e = apps.get(i);
+            names[i] = prefs.customLabel(e.key) != null ? prefs.customLabel(e.key) : e.label;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(label)
+                .setItems(names, (d, i) -> {
+                    prefs.setGesture(which, Prefs.G_APP_PREFIX + apps.get(i).key);
+                    build();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private static int[] sizes() {

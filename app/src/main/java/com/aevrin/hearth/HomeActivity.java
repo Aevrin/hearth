@@ -216,13 +216,13 @@ public class HomeActivity extends Activity
                             && scratch.contains((int) e1.getRawX(), (int) e1.getRawY())) {
                         return flipDockPage(dir);
                     }
-                    return flipPage(dir);
+                    // Pages first; the left/right gesture only runs when there's no page that way.
+                    if (flipPage(dir)) return true;
+                    return runGesture(prefs.gesture(dir > 0 ? Prefs.GESTURE_LEFT : Prefs.GESTURE_RIGHT));
                 }
                 if (Math.abs(vy) < 800) return false;
-                if (!drawerOpen && dy < -dp(60)) {
-                    openDrawer();
-                    return true;
-                }
+                if (!drawerOpen && dy < -dp(60)) return runGesture(prefs.gesture(Prefs.GESTURE_UP));
+                if (!drawerOpen && dy > dp(60)) return runGesture(prefs.gesture(Prefs.GESTURE_DOWN));
                 if (drawerOpen && dy > dp(60) && !drawerList.canScrollVertically(-1)) {
                     closeDrawer();
                     return true;
@@ -453,6 +453,56 @@ public class HomeActivity extends Activity
         boolean show = prefs.azScroller() && !adapter.isSearching();
         alpha.setVisibility(show ? View.VISIBLE : View.GONE);
         if (show) alpha.setLetters(adapter.letters());
+    }
+
+    /* ---------- gestures ---------- */
+
+    /** Runs a gesture action. Returns false for "nothing", so the swipe isn't swallowed. */
+    private boolean runGesture(String action) {
+        if (action.startsWith(Prefs.G_APP_PREFIX)) {
+            String key = action.substring(Prefs.G_APP_PREFIX.length());
+            if (repo.find(key) == null) {
+                Toast.makeText(this, R.string.gesture_app_missing, Toast.LENGTH_SHORT).show();
+            } else {
+                launchKey(key, homeContent);
+            }
+            return true;
+        }
+        switch (action) {
+            case Prefs.G_DRAWER:
+                openDrawer();
+                return true;
+            case Prefs.G_SEARCH:
+                openDrawer();
+                search.requestFocus();
+                search.post(() -> getSystemService(InputMethodManager.class)
+                        .showSoftInput(search, InputMethodManager.SHOW_IMPLICIT));
+                return true;
+            case Prefs.G_NOTIFICATIONS:
+                expandStatusBar("expandNotificationsPanel");
+                return true;
+            case Prefs.G_QUICK_SETTINGS:
+                expandStatusBar("expandSettingsPanel");
+                return true;
+            case Prefs.G_SETTINGS:
+                startActivity(new Intent(this, SettingsActivity.class));
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // There's no public API for this; every launcher that offers it calls the
+    // status bar service like this (it needs the EXPAND_STATUS_BAR permission,
+    // which is granted at install). If a future Android blocks it, say so.
+    @android.annotation.SuppressLint({"WrongConstant", "PrivateApi"})
+    private void expandStatusBar(String method) {
+        try {
+            Object service = getSystemService("statusbar");
+            Class.forName("android.app.StatusBarManager").getMethod(method).invoke(service);
+        } catch (Exception | LinkageError e) {
+            Toast.makeText(this, R.string.gesture_shade_failed, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void openClockApp() {

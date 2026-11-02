@@ -3,6 +3,8 @@
 
     <!-- "Uninstall" in the long-press menus. -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Swipe down for the notification shade. A normal permission: granted at install, no prompt. -->
+    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
 
     <!-- See every app that has a launcher icon, without QUERY_ALL_PACKAGES. -->
     <queries>

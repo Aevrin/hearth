@@ -186,4 +186,23 @@
     <string name="direction_horizontal">Horizontal</string>
     <string name="direction_vertical">Vertical</string>
     <string name="gradient_note">The clock, headings, accent labels, themed and duotone icons and drop highlights use the full gradient. Things that can only be one colour, like switches, use the colour halfway along.</string>
+
+    <!-- Gestures -->
+    <string name="section_gestures">Gestures</string>
+    <string name="summary_gestures">Swipe up, down, left and right on the home screen</string>
+    <string name="gesture_up">Swipe up</string>
+    <string name="gesture_down">Swipe down</string>
+    <string name="gesture_left">Swipe left (past the last page)</string>
+    <string name="gesture_right">Swipe right (past the first page)</string>
+    <string name="gesture_note">Swiping sideways always changes page first; the left and right gestures only run when there is no page that way, so with one page they run every time. Swiping across the dock changes dock pages.</string>
+    <string name="g_none">Nothing</string>
+    <string name="g_drawer">Open app drawer</string>
+    <string name="g_search">Search apps (drawer with keyboard)</string>
+    <string name="g_notifications">Notifications</string>
+    <string name="g_quick_settings">Quick settings</string>
+    <string name="g_settings">Hearth settings</string>
+    <string name="g_open_app">Open an app…</string>
+    <string name="g_open_named">Open %1$s</string>
+    <string name="gesture_app_missing">That app isn\'t installed any more</string>
+    <string name="gesture_shade_failed">This phone didn\'t let Hearth open the notification shade</string>
 </resources>
