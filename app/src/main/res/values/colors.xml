@@ -8,7 +8,4 @@
     <color name="aquamarine">#06B6D4</color>
     <color name="text_primary">#E6F0FF</color>
     <color name="text_muted">#99E6F0FF</color>
-    <color name="remove_bg">#B3192534</color>
-    <color name="remove_bg_active">#E6DC2626</color>
-    <color name="drop_info_active">#E6375A82</color>
 </resources>

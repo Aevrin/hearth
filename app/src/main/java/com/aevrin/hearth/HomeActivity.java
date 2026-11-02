@@ -113,7 +113,7 @@ public class HomeActivity extends Activity
         if ((which & WallpaperManager.FLAG_SYSTEM) != 0) applySystemBars();
     };
     private View dropBar;
-    private TextView dropRemove, dropInfo, dropUninstall;
+    private ImageView dropRemove, dropInfo, dropUninstall;
     private View drawer;
     private EditText search;
     private RecyclerView drawerList;
@@ -151,6 +151,7 @@ public class HomeActivity extends Activity
         HomeLayout.Folder folder;   // set when the drag started inside an open folder
         float offX, offY;           // where the finger is on the view, for the shadow and landing
         float dropX = -1, dropY;    // screen point of a drop on the grid or dock
+        Runnable onRelease;         // run if the long-press ends without moving (widgets: resize)
         boolean movedFar;
         DragState(HomeLayout.Item item, String key, AppEntry app, View view, boolean fromDrawer) {
             this.item = item; this.key = key; this.app = app; this.view = view; this.fromDrawer = fromDrawer;
@@ -826,6 +827,18 @@ public class HomeActivity extends Activity
     // and picks the item up. Locked: menu only, nothing moves.
     private void onItemLongPress(HomeLayout.Item item, View view) {
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        if (HomeLayout.isWidgetKey(item.key)) {
+            // Widgets: picked up straight away, no menu. Move to drag it (to the
+            // trash at the top to remove); let go without moving to resize it.
+            if (prefs.lockLayout()) {
+                showWidgetMenu(item, view);
+                return;
+            }
+            DragState st = new DragState(item, item.key, null, view, false);
+            st.onRelease = () -> widgetReleased(item, view);
+            armDrag(st, null);
+            return;
+        }
         PopupMenu menu = showItemMenu(item, view);
         if (prefs.lockLayout()) return;
         armDrag(new DragState(item, item.key, repo.find(item.key), view, false), menu);
@@ -971,12 +984,12 @@ public class HomeActivity extends Activity
         }
     }
 
-    private boolean onTargetDrag(TextView target, DragEvent e) {
+    private boolean onTargetDrag(ImageView target, DragEvent e) {
         if (!(e.getLocalState() instanceof DragState)) return false;
         DragState st = (DragState) e.getLocalState();
         switch (e.getAction()) {
-            case DragEvent.ACTION_DRAG_ENTERED: target.setActivated(true); return true;
-            case DragEvent.ACTION_DRAG_EXITED: target.setActivated(false); return true;
+            case DragEvent.ACTION_DRAG_ENTERED: hoverTarget(target, true); return true;
+            case DragEvent.ACTION_DRAG_EXITED: hoverTarget(target, false); return true;
             case DragEvent.ACTION_DROP:
                 if (target == dropRemove && st.item != null) removeItem(st.item);
                 else if (target == dropRemove && st.folder != null) layout.removeFromFolder(st.folder, st.key);
@@ -986,6 +999,15 @@ public class HomeActivity extends Activity
             default:
                 return true;
         }
+    }
+
+    // Just an icon at the top; held over, it grows and takes the accent colour
+    // (red for Uninstall).
+    private void hoverTarget(ImageView target, boolean over) {
+        int tint = !over ? 0xFFE6F0FF : target == dropUninstall ? 0xFFEF4444 : prefs.accent();
+        target.setImageTintList(ColorStateList.valueOf(tint));
+        target.animate().scaleX(over ? 1.3f : 1f).scaleY(over ? 1.3f : 1f).setDuration(120).start();
+        if (over) target.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
     }
 
     // Sees every drag start and end, so the end-of-drag tidy-up happens exactly once.
@@ -999,7 +1021,7 @@ public class HomeActivity extends Activity
         dock.clearHighlight();
         if (!st.fromDrawer) st.view.setVisibility(View.VISIBLE);
         dropBar.setVisibility(View.GONE);
-        for (TextView t : new TextView[] {dropRemove, dropInfo, dropUninstall}) t.setActivated(false);
+        for (ImageView t : new ImageView[] {dropRemove, dropInfo, dropUninstall}) hoverTarget(t, false);
         // Still inside the open folder (even if let go over its title): keep the new order.
         if (st.folder != null && folders.isOpen() && folders.current() == st.folder) {
             GridLayout g = folders.grid();
@@ -1558,8 +1580,7 @@ public class HomeActivity extends Activity
         boolean locked = prefs.lockLayout();
         int id = HomeLayout.widgetId(item);
         AppWidgetProviderInfo info = id < 0 ? null : widgetManager.getAppWidgetInfo(id);
-        boolean reconfigurable = info != null && info.configure != null
-                && (info.widgetFeatures & AppWidgetProviderInfo.WIDGET_FEATURE_RECONFIGURABLE) != 0;
+        boolean reconfigurable = reconfigurable(info);
         PopupMenu menu = new PopupMenu(this, anchor);
         Menu m = menu.getMenu();
         if (!locked && info != null && info.resizeMode != AppWidgetProviderInfo.RESIZE_NONE) m.add(0, 1, 0, R.string.widget_resize);
@@ -1582,6 +1603,20 @@ public class HomeActivity extends Activity
         });
         menu.show();
         return menu;
+    }
+
+    // A widget long-pressed and let go without moving: resize it if it can be
+    // resized, otherwise offer what there is (its settings, remove).
+    private void widgetReleased(HomeLayout.Item item, View view) {
+        int id = HomeLayout.widgetId(item);
+        AppWidgetProviderInfo info = id < 0 ? null : widgetManager.getAppWidgetInfo(id);
+        if (info != null && info.resizeMode != AppWidgetProviderInfo.RESIZE_NONE) resizeWidget(item, info);
+        else showWidgetMenu(item, view);
+    }
+
+    private static boolean reconfigurable(AppWidgetProviderInfo info) {
+        return info != null && info.configure != null
+                && (info.widgetFeatures & AppWidgetProviderInfo.WIDGET_FEATURE_RECONFIGURABLE) != 0;
     }
 
     /**
@@ -1615,7 +1650,17 @@ public class HomeActivity extends Activity
             @Override public void done() {
                 endResize();
             }
+            @Override public void settings() {
+                endResize();
+                try {
+                    widgetHost.startAppWidgetConfigureActivityForResult(HomeActivity.this,
+                            HomeLayout.widgetId(item), 0, REQ_WIDGET_RECONFIGURE, null);
+                } catch (ActivityNotFoundException | SecurityException e) {
+                    Toast.makeText(HomeActivity.this, R.string.widget_failed, Toast.LENGTH_SHORT).show();
+                }
+            }
         });
+        if (reconfigurable(info)) resizeFrame.setSettingsLabel(getString(R.string.widget_settings));
         resizeFrame.setAccent(prefs.accent());
         int[] g = new int[2], r = new int[2];
         View root = findViewById(R.id.root);
@@ -1853,9 +1898,15 @@ public class HomeActivity extends Activity
                 startDrag(st);        // captures the icon for the drag shadow first...
                 if (st.fromDrawer) hideDrawerForDrag(); // ...then reveals the home screen to drop on
                 return;
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_CANCEL:
+            case MotionEvent.ACTION_UP: {
+                Runnable release = pendingDrag.onRelease;
                 pendingDrag = null;   // let go without moving: the menu stays
+                pendingMenu = null;
+                if (release != null) handler.post(release);
+                return;
+            }
+            case MotionEvent.ACTION_CANCEL:
+                pendingDrag = null;
                 pendingMenu = null;
                 return;
             default:

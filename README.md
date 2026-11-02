@@ -36,7 +36,8 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - The cell under your finger lights up to show what a drop will do: a plain fill moves it there,
     a ring (dropping on the middle of an icon) makes or joins a **folder**, and a bar (dropping on
     the edge of an icon) **slides the others along** to make room.
-  - While dragging, a bar at the top offers **Remove**, **App info** and **Uninstall**.
+  - While dragging, icons at the top offer **Remove** (trash can), **App info** and **Uninstall**;
+    the one under your finger grows and lights up.
   - An app's menu lists its own **shortcuts** first (e.g. "New
     message"), then Rename, Change icon, Remove, App info, Uninstall.
   - **Pinned shortcuts:** when another app offers "Add to home screen" (a contact, a site, a
@@ -62,11 +63,11 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   previews, sizes and a search box. Hearth places it in the first free space big enough (on the
   current page first), running the widget's own setup screen if it has one. The first time you add
   a widget from an app, Android asks whether Hearth may create widgets.
-  - Long-press a widget for **Resize**, **Widget settings** (for widgets that support it) and
-    **Remove**; keep holding and move to drag it. It only drops where all its cells are free; the
-    highlight shows its whole footprint.
-  - **Resize** puts a frame with handles around the widget: drag an edge and the grid shows where
-    it will snap (within the widget's own limits and the free space). Tap outside or Back to finish.
+  - Long-press a widget to pick it up: move it to drag it somewhere else (it only drops where all
+    its cells are free; the highlight shows its whole footprint), or onto the trash can at the top
+    to remove it. Let go **without moving** and it goes straight into **resize**: a frame with
+    handles; drag an edge and the grid shows where it will snap. Widgets with their own settings
+    get a **Widget settings** button under the frame. Tap outside or Back to finish.
   - Icons slide around widgets, never through them. Widgets live on home pages only (not the dock
     or folders). A widget whose app was uninstalled, or one restored from a backup on another
     phone, shows as "Widget unavailable" until you remove it.

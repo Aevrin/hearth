@@ -120,43 +120,37 @@
         <LinearLayout
             android:id="@+id/drop_bar"
             android:layout_width="match_parent"
-            android:layout_height="64dp"
+            android:layout_height="72dp"
             android:layout_gravity="top"
             android:orientation="horizontal"
             android:visibility="gone">
 
-            <TextView
+            <ImageView
                 android:id="@+id/drop_remove"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:background="@drawable/remove_zone_bg"
-                android:gravity="center"
-                android:text="@string/remove"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
+                android:contentDescription="@string/remove"
+                android:scaleType="center"
+                android:src="@drawable/ic_drop_remove" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/drop_info"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:background="@drawable/drop_target_bg"
-                android:gravity="center"
-                android:text="@string/app_info"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
+                android:contentDescription="@string/app_info"
+                android:scaleType="center"
+                android:src="@drawable/ic_drop_info" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/drop_uninstall"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:background="@drawable/remove_zone_bg"
-                android:gravity="center"
-                android:text="@string/uninstall"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
+                android:contentDescription="@string/uninstall"
+                android:scaleType="center"
+                android:src="@drawable/ic_drop_uninstall" />
         </LinearLayout>
     </FrameLayout>
 

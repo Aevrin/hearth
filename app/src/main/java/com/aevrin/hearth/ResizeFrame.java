@@ -31,6 +31,8 @@ final class ResizeFrame extends View {
         void preview(int x, int y, int w, int h, boolean ok);
         /** Resize mode is over. */
         void done();
+        /** The widget's own settings button was tapped. */
+        void settings();
     }
 
     private static final int NONE = 0, LEFT = 1, TOP = 2, RIGHT = 3, BOTTOM = 4;
@@ -51,6 +53,11 @@ final class ResizeFrame extends View {
     private boolean horizontal, vertical;
 
     private int dragging = NONE;
+    // Optional "Widget settings" pill under the frame.
+    private String settingsLabel;
+    private final Paint pill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pillText = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF pillRect = new RectF();
     private int snapX, snapY, snapW, snapH;
 
     ResizeFrame(Context c, Host host) {
@@ -62,8 +69,17 @@ final class ResizeFrame extends View {
         handleRing.setStyle(Paint.Style.STROKE);
         handleRing.setStrokeWidth(2f * density);
         handleRing.setColor(0xFF0F1A2A);
+        pill.setColor(0xF0192534);
+        pillText.setColor(0xFFE6F0FF);
+        pillText.setTextSize(14 * c.getResources().getDisplayMetrics().scaledDensity);
+        pillText.setTextAlign(Paint.Align.CENTER);
         setClickable(true);
         setHapticFeedbackEnabled(true);
+    }
+
+    void setSettingsLabel(String label) {
+        settingsLabel = label;
+        invalidate();
     }
 
     void setAccent(int color) {
@@ -115,6 +131,20 @@ final class ResizeFrame extends View {
             dot(c, rect.centerX(), rect.top + inset, hr);
             dot(c, rect.centerX(), rect.bottom - inset, hr);
         }
+        if (settingsLabel != null && dragging == NONE) {
+            // Below the frame, or above it when there's no room underneath.
+            float w = pillText.measureText(settingsLabel) + 36 * density, h = 40 * density;
+            float top = rect.bottom + 14 * density;
+            if (top + h > getHeight() - 8 * density) top = rect.top - 14 * density - h;
+            float left = Math.max(8 * density, Math.min(getWidth() - w - 8 * density, rect.centerX() - w / 2));
+            pillRect.set(left, top, left + w, top + h);
+            c.drawRoundRect(pillRect, h / 2, h / 2, pill);
+            c.drawRoundRect(pillRect, h / 2, h / 2, frame);
+            Paint.FontMetrics fm = pillText.getFontMetrics();
+            c.drawText(settingsLabel, pillRect.centerX(), pillRect.centerY() - (fm.ascent + fm.descent) / 2, pillText);
+        } else {
+            pillRect.setEmpty();
+        }
     }
 
     private void dot(Canvas c, float cx, float cy, float r) {
@@ -128,6 +158,10 @@ final class ResizeFrame extends View {
         float ex = e.getX(), ey = e.getY();
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                if (!pillRect.isEmpty() && pillRect.contains(ex, ey)) {
+                    host.settings();
+                    return true;
+                }
                 dragging = handleAt(ex, ey);
                 if (dragging == NONE) {
                     host.done(); // a tap anywhere else ends resize mode
