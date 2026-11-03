@@ -351,23 +351,34 @@ final class Prefs {
     int sidebarStyle(String side) { return clamp(sp.getInt(side + SB_STYLE, SB_STYLE_SHORTCUTS), 0, 1); }
     void setSidebarStyle(String side, int v) { sp.edit().putInt(side + SB_STYLE, v).apply(); }
 
-    /** A panel's widget cards, in order: {widget id, height in dp}. */
-    java.util.List<int[]> sidebarCards(String side) {
-        java.util.List<int[]> out = new java.util.ArrayList<>();
+    /** One card in a wide sidebar: a widget, a note or a checklist, with its height in dp. */
+    static final class Card {
+        static final String WIDGET = "widget", NOTE = "note", LIST = "list";
+        final String type;
+        final int id; // widget id, or note/checklist id
+        int height;
+        Card(String type, int id, int height) { this.type = type; this.id = id; this.height = height; }
+    }
+
+    java.util.List<Card> sidebarCards(String side) {
+        java.util.List<Card> out = new java.util.ArrayList<>();
         try {
             org.json.JSONArray a = new org.json.JSONArray(sp.getString(side + SB_CARDS, "[]"));
             for (int i = 0; i < a.length(); i++) {
                 JSONObject c = a.optJSONObject(i);
-                if (c != null && c.has("id")) out.add(new int[] {c.optInt("id"), clamp(c.optInt("h", 160), 48, 2000)});
+                if (c == null || !c.has("id")) continue;
+                String t = c.optString("type", Card.WIDGET); // older cards were all widgets
+                if (!t.equals(Card.WIDGET) && !t.equals(Card.NOTE) && !t.equals(Card.LIST)) continue;
+                out.add(new Card(t, c.optInt("id"), clamp(c.optInt("h", 160), 48, 2000)));
             }
         } catch (JSONException ignored) { }
         return out;
     }
 
-    void setSidebarCards(String side, java.util.List<int[]> cards) {
+    void setSidebarCards(String side, java.util.List<Card> cards) {
         org.json.JSONArray a = new org.json.JSONArray();
         try {
-            for (int[] c : cards) a.put(new JSONObject().put("id", c[0]).put("h", c[1]));
+            for (Card c : cards) a.put(new JSONObject().put("type", c.type).put("id", c.id).put("h", c.height));
         } catch (JSONException ignored) { }
         sp.edit().putString(side + SB_CARDS, a.toString()).apply();
     }
@@ -375,9 +386,34 @@ final class Prefs {
     /** Every widget id used by a sidebar panel (so it isn't tidied away). */
     Set<Integer> sidebarWidgetIds() {
         Set<Integer> ids = new HashSet<>();
-        for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) for (int[] c : sidebarCards(side)) ids.add(c[0]);
+        for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) {
+            for (Card c : sidebarCards(side)) if (Card.WIDGET.equals(c.type)) ids.add(c.id);
+        }
         return ids;
     }
+
+    /* ---------- notes and checklists (kept on the phone only) ---------- */
+
+    private static final String NOTE_TEXT = "note_text_", NOTE_LIST = "note_list_", NEXT_NOTE = "next_note_id";
+    static final String BACKUP_NOTES = "backup_notes";
+
+    int newNoteId() {
+        int id = Math.max(1, sp.getInt(NEXT_NOTE, 1));
+        sp.edit().putInt(NEXT_NOTE, id + 1).apply();
+        return id;
+    }
+
+    String noteText(int id) { return sp.getString(NOTE_TEXT + id, ""); }
+    void setNoteText(int id, String text) { sp.edit().putString(NOTE_TEXT + id, text).apply(); }
+
+    /** A checklist as JSON: [{"t": text, "d": done}, …]. */
+    String checklist(int id) { return sp.getString(NOTE_LIST + id, "[]"); }
+    void setChecklist(int id, String json) { sp.edit().putString(NOTE_LIST + id, json).apply(); }
+
+    void deleteNote(int id) { sp.edit().remove(NOTE_TEXT + id).remove(NOTE_LIST + id).apply(); }
+
+    boolean backupNotes() { return sp.getBoolean(BACKUP_NOTES, true); }
+    void setBackupNotes(boolean v) { sp.edit().putBoolean(BACKUP_NOTES, v).apply(); }
 
     private static String itemsKey(String side) {
         return SIDEBAR_RIGHT.equals(side) ? SIDEBAR_RIGHT_ITEMS : SIDEBAR_LEFT_ITEMS;
@@ -604,9 +640,21 @@ final class Prefs {
             o.put(side + BG_OPACITY, bgOpacity(side));
         }
         o.put(SIDEBAR_RIGHT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_RIGHT)));
+        o.put(BACKUP_NOTES, backupNotes());
+        JSONObject notes = new JSONObject(), lists = new JSONObject();
         for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) {
             o.put(side + SB_STYLE, sidebarStyle(side));
             o.put(side + SB_CARDS, new org.json.JSONArray(sp.getString(side + SB_CARDS, "[]")));
+            if (!backupNotes()) continue;
+            for (Card c : sidebarCards(side)) {
+                if (Card.NOTE.equals(c.type)) notes.put(String.valueOf(c.id), noteText(c.id));
+                if (Card.LIST.equals(c.type)) lists.put(String.valueOf(c.id), new org.json.JSONArray(checklist(c.id)));
+            }
+        }
+        if (backupNotes()) {
+            o.put("notes", notes);
+            o.put("checklists", lists);
+            o.put(NEXT_NOTE, sp.getInt(NEXT_NOTE, 1));
         }
         return o;
     }
@@ -626,9 +674,37 @@ final class Prefs {
                 org.json.JSONArray a = o.getJSONArray(k), keep = new org.json.JSONArray();
                 for (int i = 0; i < a.length(); i++) {
                     JSONObject c = a.optJSONObject(i);
-                    if (c != null && c.has("id")) keep.put(new JSONObject().put("id", c.optInt("id")).put("h", c.optInt("h", 160)));
+                    if (c == null || !c.has("id")) continue;
+                    String t = c.optString("type", Card.WIDGET);
+                    if (!t.equals(Card.WIDGET) && !t.equals(Card.NOTE) && !t.equals(Card.LIST)) continue;
+                    keep.put(new JSONObject().put("type", t).put("id", c.optInt("id")).put("h", c.optInt("h", 160)));
                 }
                 e.putString(k, keep.toString());
+                continue;
+            }
+            if (k.equals("notes")) {
+                JSONObject n = o.getJSONObject(k);
+                for (Iterator<String> ni = n.keys(); ni.hasNext(); ) {
+                    String id = ni.next();
+                    if (id.matches("\\d+")) e.putString(NOTE_TEXT + id, n.optString(id));
+                }
+                continue;
+            }
+            if (k.equals("checklists")) {
+                JSONObject n = o.getJSONObject(k);
+                for (Iterator<String> ni = n.keys(); ni.hasNext(); ) {
+                    String id = ni.next();
+                    org.json.JSONArray items = n.optJSONArray(id);
+                    if (id.matches("\\d+") && items != null) e.putString(NOTE_LIST + id, items.toString());
+                }
+                continue;
+            }
+            if (k.equals(NEXT_NOTE)) {
+                e.putInt(k, Math.max(sp.getInt(NEXT_NOTE, 1), o.getInt(k)));
+                continue;
+            }
+            if (k.equals(BACKUP_NOTES)) {
+                e.putBoolean(k, o.getBoolean(k));
                 continue;
             }
             boolean surface = false;

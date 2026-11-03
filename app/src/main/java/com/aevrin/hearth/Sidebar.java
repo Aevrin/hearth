@@ -65,6 +65,7 @@ final class Sidebar {
     private int panelWidth;
     private View header;       // grab strip at the top of a panel: swipe it toward the edge to close
     private int resizingId = -1;
+    private String resizingType = "";
 
     Sidebar(Activity activity, Host host, View layer, View scrim, LinearLayout panel, LinearLayout list, ImageView add) {
         this.activity = activity;
@@ -76,7 +77,7 @@ final class Sidebar {
         this.add = add;
         scrim.setOnClickListener(v -> close());
         add.setOnClickListener(v -> {
-            if (panelMode) host.addSidebarWidget(key(side));
+            if (panelMode) showAddMenu(v);
             else addEntry();
         });
         header = new View(activity);
@@ -230,6 +231,13 @@ final class Sidebar {
     }
 
     private void finishClose() {
+        // Typing in a note: put the keyboard away and save (focus leaving saves).
+        View focused = activity.getCurrentFocus();
+        if (focused != null && list.findFocus() == focused) {
+            focused.clearFocus();
+            activity.getSystemService(android.view.inputmethod.InputMethodManager.class)
+                    .hideSoftInputFromWindow(focused.getWindowToken(), 0);
+        }
         side = NONE;
         fraction = 0f;
         layer.setVisibility(View.GONE);
@@ -259,33 +267,8 @@ final class Sidebar {
         add.setImageTintList(android.content.res.ColorStateList.valueOf(light ? 0xFF14202E : 0xFFE6F0FF));
         add.setContentDescription(activity.getString(R.string.sidebar_add));
         List<String> items = prefs.sidebarItems(key(side));
-        int iconPx = host.sidebarIconPx();
         for (int i = 0; i < items.size(); i++) {
-            String spec = items.get(i);
-            String name = Targets.label(activity, host.repo(), prefs, spec);
-            if (name == null) name = activity.getString(R.string.sidebar_missing);
-            View v = LayoutInflater.from(activity).inflate(R.layout.item_icon, list, false);
-            ImageView icon = v.findViewById(R.id.icon);
-            icon.getLayoutParams().width = iconPx;
-            icon.getLayoutParams().height = iconPx;
-            Targets.loadIcon(host.repo(), spec, icon::setImageDrawable);
-            TextView label = v.findViewById(R.id.label);
-            label.setText(name);
-            prefs.styleLabel(label);
-            if (light && !prefs.labelAccent()) {
-                label.setTextColor(0xFF14202E);
-                label.setShadowLayer(0f, 0f, 0f, 0);
-            }
-            label.setVisibility(prefs.drawerLabels() ? View.VISIBLE : View.GONE);
-            v.setContentDescription(name);
-            v.setOnClickListener(x -> {
-                if (host.launchTarget(spec, x)) x.postDelayed(this::close, 250);
-            });
-            int index = i;
-            v.setOnLongClickListener(x -> {
-                if (!host.prefs().lockLayout()) showEntryMenu(index, x);
-                return true;
-            });
+            View v = iconTile(items.get(i), i, list);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             lp.bottomMargin = Math.round(4 * activity.getResources().getDisplayMetrics().density);
@@ -301,6 +284,36 @@ final class Sidebar {
             hint.setPadding(p, p * 2, p, p);
             list.addView(hint);
         }
+    }
+
+    /** One app, activity or shortcut: icon and label; tap to open, long-press to move or remove. */
+    private View iconTile(String spec, int index, android.view.ViewGroup parent) {
+        Prefs prefs = host.prefs();
+        String name = Targets.label(activity, host.repo(), prefs, spec);
+        if (name == null) name = activity.getString(R.string.sidebar_missing);
+        View v = LayoutInflater.from(activity).inflate(R.layout.item_icon, parent, false);
+        ImageView icon = v.findViewById(R.id.icon);
+        int iconPx = host.sidebarIconPx();
+        icon.getLayoutParams().width = iconPx;
+        icon.getLayoutParams().height = iconPx;
+        Targets.loadIcon(host.repo(), spec, icon::setImageDrawable);
+        TextView label = v.findViewById(R.id.label);
+        label.setText(name);
+        prefs.styleLabel(label);
+        if (light && !prefs.labelAccent()) {
+            label.setTextColor(0xFF14202E);
+            label.setShadowLayer(0f, 0f, 0f, 0);
+        }
+        label.setVisibility(prefs.drawerLabels() ? View.VISIBLE : View.GONE);
+        v.setContentDescription(name);
+        v.setOnClickListener(x -> {
+            if (host.launchTarget(spec, x)) x.postDelayed(this::close, 250);
+        });
+        v.setOnLongClickListener(x -> {
+            if (!host.prefs().lockLayout()) showEntryMenu(index, x);
+            return true;
+        });
+        return v;
     }
 
     private void showEntryMenu(int index, View anchor) {
@@ -355,33 +368,77 @@ final class Sidebar {
         };
     }
 
+    // Wide: the side's icons in a grid at the top, then its cards (widgets, notes, checklists).
     private void populatePanel() {
         Prefs prefs = host.prefs();
         boolean locked = prefs.lockLayout();
         add.setVisibility(locked ? View.GONE : View.VISIBLE);
         add.setImageTintList(android.content.res.ColorStateList.valueOf(light ? 0xFF14202E : 0xFFE6F0FF));
-        add.setContentDescription(activity.getString(R.string.sidebar_add_widget));
+        add.setContentDescription(activity.getString(R.string.sidebar_add));
         list.setGravity(Gravity.NO_GRAVITY);
-        List<int[]> cards = prefs.sidebarCards(key(side));
+
+        List<String> items = prefs.sidebarItems(key(side));
+        if (!items.isEmpty()) {
+            android.widget.GridLayout icons = new android.widget.GridLayout(activity);
+            int cellW = dp(76);
+            int cols = Math.max(3, (panelWidth - dp(20)) / cellW);
+            icons.setColumnCount(cols);
+            for (int i = 0; i < items.size(); i++) {
+                View v = iconTile(items.get(i), i, icons);
+                android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
+                lp.width = (panelWidth - dp(20)) / cols;
+                icons.addView(v, lp);
+            }
+            LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            glp.setMargins(dp(10), 0, dp(10), dp(4));
+            list.addView(icons, glp);
+        }
+
+        List<Prefs.Card> cards = prefs.sidebarCards(key(side));
+        NoteCards notes = new NoteCards(activity, prefs, light);
         for (int i = 0; i < cards.size(); i++) {
-            int id = cards.get(i)[0];
+            Prefs.Card c = cards.get(i);
             int index = i;
             FrameLayout card = new FrameLayout(activity);
-            View w = host.sidebarWidget(id);
-            card.addView(w, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT));
-            w.setOnLongClickListener(v -> {
-                showCardMenu(index, id, card);
-                return true;
-            });
-            if (id == resizingId) card.addView(resizeHandle(card, index), new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, dp(32), Gravity.BOTTOM));
+            if (Prefs.Card.WIDGET.equals(c.type)) {
+                View w = host.sidebarWidget(c.id);
+                card.addView(w, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+                w.setOnLongClickListener(v -> {
+                    showCardMenu(index, card);
+                    return true;
+                });
+            } else {
+                // Notes and checklists: a soft surface, and a ⋮ button for the menu
+                // (long-press in a text box selects text instead).
+                GradientDrawable bg = new GradientDrawable();
+                bg.setColor(light ? 0x14000000 : 0x1AFFFFFF);
+                bg.setCornerRadius(dp(16));
+                card.setBackground(bg);
+                card.setPadding(dp(8), dp(4), dp(4), dp(4));
+                View body = Prefs.Card.NOTE.equals(c.type) ? notes.note(c.id) : notes.checklist(c.id);
+                card.addView(body, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+                ImageView more = new ImageView(activity);
+                more.setImageResource(R.drawable.ic_more);
+                more.setImageTintList(android.content.res.ColorStateList.valueOf(light ? 0x9914202E : 0x99E6F0FF));
+                more.setContentDescription(activity.getString(R.string.card_menu));
+                more.setPadding(dp(6), dp(6), dp(6), dp(6));
+                more.setOnClickListener(v -> showCardMenu(index, v));
+                card.addView(more, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END));
+            }
+            if (c.id == resizingId && c.type.equals(resizingType)) {
+                card.addView(resizeHandle(card, index), new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, dp(32), Gravity.BOTTOM));
+            }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(cards.get(i)[1]));
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(c.height));
             lp.setMargins(dp(10), dp(6), dp(10), dp(6));
             list.addView(card, lp);
         }
-        if (cards.isEmpty()) {
+        if (cards.isEmpty() && items.isEmpty()) {
             TextView hint = new TextView(activity);
             hint.setText(locked ? R.string.sidebar_empty_locked : R.string.sidebar_panel_empty);
             hint.setTextColor(light ? 0x9914202E : 0x99E6F0FF);
@@ -392,37 +449,94 @@ final class Sidebar {
         }
     }
 
-    private void showCardMenu(int index, int id, View anchor) {
+    /** + on a wide sidebar: what to add. */
+    private void showAddMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(activity, anchor);
+        menu.getMenu().add(0, 1, 0, R.string.add_icon);
+        menu.getMenu().add(0, 2, 1, R.string.add_widget);
+        menu.getMenu().add(0, 3, 2, R.string.add_note);
+        menu.getMenu().add(0, 4, 3, R.string.add_checklist);
+        String k = key(side);
+        menu.setOnMenuItemClickListener(mi -> {
+            switch (mi.getItemId()) {
+                case 1: addEntry(); return true;
+                case 2: host.addSidebarWidget(k); return true;
+                default: {
+                    boolean note = mi.getItemId() == 3;
+                    List<Prefs.Card> cards = host.prefs().sidebarCards(k);
+                    cards.add(new Prefs.Card(note ? Prefs.Card.NOTE : Prefs.Card.LIST,
+                            host.prefs().newNoteId(), note ? 180 : 220));
+                    host.prefs().setSidebarCards(k, cards);
+                    populate();
+                    return true;
+                }
+            }
+        });
+        menu.show();
+    }
+
+    private void showCardMenu(int index, View anchor) {
         anchor.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
         boolean locked = host.prefs().lockLayout();
-        List<int[]> cards = host.prefs().sidebarCards(key(side));
+        List<Prefs.Card> cards = host.prefs().sidebarCards(key(side));
+        if (index >= cards.size()) return;
+        Prefs.Card c = cards.get(index);
+        boolean widget = Prefs.Card.WIDGET.equals(c.type);
         PopupMenu menu = new PopupMenu(activity, anchor);
         if (!locked) {
             menu.getMenu().add(0, 1, 0, R.string.card_resize);
             if (index > 0) menu.getMenu().add(0, 2, 1, R.string.move_up);
             if (index < cards.size() - 1) menu.getMenu().add(0, 3, 2, R.string.move_down);
         }
-        if (host.widgetHasSettings(id)) menu.getMenu().add(0, 4, 3, R.string.widget_settings);
-        if (!locked) menu.getMenu().add(0, 5, 4, R.string.remove);
+        if (widget && host.widgetHasSettings(c.id)) menu.getMenu().add(0, 4, 3, R.string.widget_settings);
+        if (Prefs.Card.LIST.equals(c.type)) menu.getMenu().add(0, 6, 4, R.string.checklist_clear_done);
+        if (!locked) menu.getMenu().add(0, 5, 5, R.string.remove);
         if (menu.getMenu().size() == 0) return;
         menu.setOnMenuItemClickListener(mi -> {
-            List<int[]> now = host.prefs().sidebarCards(key(side));
+            List<Prefs.Card> now = host.prefs().sidebarCards(key(side));
             if (index >= now.size()) return true;
             switch (mi.getItemId()) {
-                case 1: resizingId = id; populate(); return true;
+                case 1:
+                    resizingId = c.id;
+                    resizingType = c.type;
+                    populate();
+                    return true;
                 case 2: now.add(index - 1, now.remove(index)); break;
                 case 3: now.add(index + 1, now.remove(index)); break;
-                case 4: host.openWidgetSettings(id); return true;
+                case 4: host.openWidgetSettings(c.id); return true;
+                case 6:
+                    new NoteCards(activity, host.prefs(), light).clearDone(c.id);
+                    populate();
+                    return true;
                 default:
-                    now.remove(index);
-                    host.removeSidebarWidget(id);
-                    break;
+                    if (widget) {
+                        removeCard(index);
+                    } else {
+                        // Notes are typed by hand: check first.
+                        new android.app.AlertDialog.Builder(activity)
+                                .setMessage(Prefs.Card.NOTE.equals(c.type) ? R.string.note_delete_confirm
+                                        : R.string.checklist_delete_confirm)
+                                .setPositiveButton(R.string.remove, (d, w) -> removeCard(index))
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show();
+                    }
+                    return true;
             }
             host.prefs().setSidebarCards(key(side), now);
             populate();
             return true;
         });
         menu.show();
+    }
+
+    private void removeCard(int index) {
+        List<Prefs.Card> now = host.prefs().sidebarCards(key(side));
+        if (index >= now.size()) return;
+        Prefs.Card c = now.remove(index);
+        if (Prefs.Card.WIDGET.equals(c.type)) host.removeSidebarWidget(c.id);
+        else host.prefs().deleteNote(c.id);
+        host.prefs().setSidebarCards(key(side), now);
+        populate();
     }
 
     // A strip along the card's bottom edge: drag it to make the card taller or
@@ -458,10 +572,10 @@ final class Sidebar {
                     }
                     case android.view.MotionEvent.ACTION_UP:
                     case android.view.MotionEvent.ACTION_CANCEL: {
-                        List<int[]> now = host.prefs().sidebarCards(key(side));
+                        List<Prefs.Card> now = host.prefs().sidebarCards(key(side));
                         if (index < now.size()) {
                             float d = activity.getResources().getDisplayMetrics().density;
-                            now.get(index)[1] = Math.round(lp.height / d);
+                            now.get(index).height = Math.round(lp.height / d);
                             host.prefs().setSidebarCards(key(side), now);
                         }
                         if (!moved) {

@@ -246,7 +246,7 @@ public class HomeActivity extends Activity
             Insets ime = insets.getInsets(WindowInsets.Type.ime());
             homeContent.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             drawer.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
-            sidebar.setInsets(bars.top, bars.bottom);
+            sidebar.setInsets(bars.top, Math.max(bars.bottom, ime.bottom)); // notes stay above the keyboard
             return WindowInsets.CONSUMED;
         });
 
@@ -2049,8 +2049,8 @@ public class HomeActivity extends Activity
             int h = info.targetCellHeight > 0 && grid.cellHeight() > 0
                     ? info.targetCellHeight * grid.cellHeight() / layout.sub() : info.minHeight;
             int dpH = Math.max(96, Math.min(480, Math.round(h / d) + 16));
-            List<int[]> cards = prefs.sidebarCards(side);
-            cards.add(new int[] {id, dpH});
+            List<Prefs.Card> cards = prefs.sidebarCards(side);
+            cards.add(new Prefs.Card(Prefs.Card.WIDGET, id, dpH));
             prefs.setSidebarCards(side, cards);
             sidebar.open(Prefs.SIDEBAR_RIGHT.equals(side) ? Sidebar.RIGHT : Sidebar.LEFT);
             sidebar.refresh();

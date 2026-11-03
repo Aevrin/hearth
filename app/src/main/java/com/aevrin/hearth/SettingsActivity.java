@@ -378,6 +378,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
 
     private void buildBackup() {
         note(R.string.backup_note);
+        toggle(R.string.backup_notes, prefs.backupNotes(), prefs::setBackupNotes);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams rlp = matchWrap();

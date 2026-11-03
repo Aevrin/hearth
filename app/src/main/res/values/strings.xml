@@ -270,10 +270,10 @@
     <string name="sidebar_add">Add to sidebar</string>
     <string name="sidebar_enabled">On</string>
     <string name="sidebar_style">Style</string>
-    <string name="sb_style_shortcuts">Shortcuts</string>
-    <string name="sb_style_panel">Panel (widgets)</string>
+    <string name="sb_style_shortcuts">Narrow (icons)</string>
+    <string name="sb_style_panel">Wide (icons, widgets, notes)</string>
     <string name="sidebar_add_widget">Add a widget</string>
-    <string name="sidebar_panel_empty">Empty. Tap + below to add widgets: a calendar, weather, music, notes…</string>
+    <string name="sidebar_panel_empty">Empty. Tap + below to add apps, widgets (a calendar, weather, music…), a note or a checklist.</string>
     <string name="sidebar_close">Close sidebar</string>
     <string name="card_resize">Resize height</string>
     <string name="sidebar_background">Background</string>
@@ -306,4 +306,19 @@
     <string name="sort_most_used">Most used</string>
     <string name="sort_recent">Recently installed</string>
     <string name="new_dots">Dot on newly installed apps (until opened)</string>
+
+    <!-- Wide sidebars: add menu, notes, checklists -->
+    <string name="add_icon">App, activity or shortcut</string>
+    <string name="add_widget">Widget</string>
+    <string name="add_note">Note</string>
+    <string name="add_checklist">Checklist</string>
+    <string name="card_menu">Card options</string>
+    <string name="note_hint">Note…</string>
+    <string name="checklist_item_hint">To do…</string>
+    <string name="checklist_add">+ Add item</string>
+    <string name="checklist_delete">Delete item</string>
+    <string name="checklist_clear_done">Clear ticked items</string>
+    <string name="note_delete_confirm">Delete this note? Its text will be gone.</string>
+    <string name="checklist_delete_confirm">Delete this checklist and all its items?</string>
+    <string name="backup_notes">Include notes and checklists in backups</string>
 </resources>

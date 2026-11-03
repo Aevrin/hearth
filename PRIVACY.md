@@ -1,6 +1,6 @@
 # Hearth privacy policy
 
-*Last updated: 1 November 2026*
+*Last updated: 3 November 2026*
 
 Hearth is an Android home-screen launcher. It is free, open-source software
 ([source code](https://github.com/Aevrin/hearth)).
@@ -17,6 +17,9 @@ Everything Hearth keeps stays in its private storage on your phone:
 - **Your settings** (grid size, colours, icon style, gestures and so on).
 - **Your home screen layout**: which apps, shortcuts, folders and widgets are where.
 - **Custom app names and icon choices** you set.
+- **Notes and checklists** you type into a sidebar. They stay in Hearth's
+  storage on the phone; they're included in backups you make yourself unless
+  you switch that off in Settings → Backup.
 - **How often you open each app**, used only to show the optional "Most used"
   row in the app drawer. This count never leaves the phone and is not included
   in backups.
