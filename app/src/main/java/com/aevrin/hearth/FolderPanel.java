@@ -114,6 +114,15 @@ final class FolderPanel {
         host.afterLayout(card, () -> place(opening));
     }
 
+    /** Closed at once, no animation (screen off, leaving home). */
+    void closeNow() {
+        if (folder == null) return;
+        folder = null;
+        activity.getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(onBack);
+        overlay.animate().cancel();
+        overlay.setVisibility(View.GONE);
+    }
+
     void close() {
         if (folder == null) return;
         folder = null;

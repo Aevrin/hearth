@@ -71,6 +71,12 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   zone is up to 200dp of the edge (top, middle or bottom), the most Android lets an app take from
   the Back gesture; the rest of the edge is still Back. Each sidebar has its own background (theme, any colour,
   or a gradient) and opacity down to fully see-through; labels turn dark on light backgrounds.
+  - Each sidebar is either **Shortcuts** (the narrow column) or a **Panel**: a wide sidebar of
+    **widget cards** (a calendar app's agenda, weather, music controls…), added with +, with
+    long-press to resize the height (drag the bar), reorder, open the widget's settings or remove.
+    A panel closes by tapping outside, Back, or swiping/tapping the grab strip at its top (not by
+    swiping across it, since widgets scroll sideways).
+- Turning the screen off closes any open sidebar or folder.
 - **Widgets:** long-press empty space → **Widgets** for every installed widget, grouped by app with
   previews, sizes and a search box. Hearth places it in the first free space big enough (on the
   current page first), running the widget's own setup screen if it has one. The first time you add

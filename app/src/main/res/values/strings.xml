@@ -269,6 +269,13 @@
     <string name="sidebar_note">Swipe in from the edge where the handle is; the rest of the edge still works as Back. Android only lets apps take over 200dp of each edge from the Back gesture. You can also open a sidebar with a gesture. Add entries with + at its bottom; long-press an entry to move or remove it.</string>
     <string name="sidebar_add">Add to sidebar</string>
     <string name="sidebar_enabled">On</string>
+    <string name="sidebar_style">Style</string>
+    <string name="sb_style_shortcuts">Shortcuts</string>
+    <string name="sb_style_panel">Panel (widgets)</string>
+    <string name="sidebar_add_widget">Add a widget</string>
+    <string name="sidebar_panel_empty">Empty. Tap + below to add widgets: a calendar, weather, music, notes…</string>
+    <string name="sidebar_close">Close sidebar</string>
+    <string name="card_resize">Resize height</string>
     <string name="sidebar_background">Background</string>
     <string name="sb_theme">Theme</string>
     <string name="sb_solid">Colour</string>

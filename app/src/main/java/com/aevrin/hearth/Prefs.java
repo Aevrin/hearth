@@ -111,6 +111,9 @@ final class Prefs {
     /** Swipe-in zone widths, in dp: narrow, wide, ultra wide. */
     static final int[] ZONE_WIDTHS = {24, 48, 72};
     static final int HANDLE_TOP = 0, HANDLE_MIDDLE = 1, HANDLE_BOTTOM = 2;
+    /** Sidebar styles: a narrow column of shortcuts, or a wide panel of widget cards. */
+    static final int SB_STYLE_SHORTCUTS = 0, SB_STYLE_PANEL = 1;
+    private static final String SB_STYLE = "_style", SB_CARDS = "_cards";
     /** Surfaces with their own background: each sidebar, the open folder, the folder icon's plate. */
     static final String FOLDER_PANEL = "folder_panel", FOLDER_PLATE = "folder_plate";
     static final String[] BG_SURFACES = {SIDEBAR_LEFT, SIDEBAR_RIGHT, FOLDER_PANEL, FOLDER_PLATE};
@@ -345,6 +348,37 @@ final class Prefs {
         return new Accent(c, mode == SB_GRADIENT ? bgColor2(side) : c, mode == SB_GRADIENT, bgDirection(side));
     }
 
+    int sidebarStyle(String side) { return clamp(sp.getInt(side + SB_STYLE, SB_STYLE_SHORTCUTS), 0, 1); }
+    void setSidebarStyle(String side, int v) { sp.edit().putInt(side + SB_STYLE, v).apply(); }
+
+    /** A panel's widget cards, in order: {widget id, height in dp}. */
+    java.util.List<int[]> sidebarCards(String side) {
+        java.util.List<int[]> out = new java.util.ArrayList<>();
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(sp.getString(side + SB_CARDS, "[]"));
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject c = a.optJSONObject(i);
+                if (c != null && c.has("id")) out.add(new int[] {c.optInt("id"), clamp(c.optInt("h", 160), 48, 2000)});
+            }
+        } catch (JSONException ignored) { }
+        return out;
+    }
+
+    void setSidebarCards(String side, java.util.List<int[]> cards) {
+        org.json.JSONArray a = new org.json.JSONArray();
+        try {
+            for (int[] c : cards) a.put(new JSONObject().put("id", c[0]).put("h", c[1]));
+        } catch (JSONException ignored) { }
+        sp.edit().putString(side + SB_CARDS, a.toString()).apply();
+    }
+
+    /** Every widget id used by a sidebar panel (so it isn't tidied away). */
+    Set<Integer> sidebarWidgetIds() {
+        Set<Integer> ids = new HashSet<>();
+        for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) for (int[] c : sidebarCards(side)) ids.add(c[0]);
+        return ids;
+    }
+
     private static String itemsKey(String side) {
         return SIDEBAR_RIGHT.equals(side) ? SIDEBAR_RIGHT_ITEMS : SIDEBAR_LEFT_ITEMS;
     }
@@ -570,6 +604,10 @@ final class Prefs {
             o.put(side + BG_OPACITY, bgOpacity(side));
         }
         o.put(SIDEBAR_RIGHT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_RIGHT)));
+        for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) {
+            o.put(side + SB_STYLE, sidebarStyle(side));
+            o.put(side + SB_CARDS, new org.json.JSONArray(sp.getString(side + SB_CARDS, "[]")));
+        }
         return o;
     }
 
@@ -579,6 +617,20 @@ final class Prefs {
         for (Iterator<String> it = o.keys(); it.hasNext(); ) {
             String k = it.next();
             // Per-surface background settings.
+            if (k.equals(SIDEBAR_LEFT + SB_STYLE) || k.equals(SIDEBAR_RIGHT + SB_STYLE)) {
+                e.putInt(k, clamp(o.getInt(k), 0, 1));
+                continue;
+            }
+            if (k.equals(SIDEBAR_LEFT + SB_CARDS) || k.equals(SIDEBAR_RIGHT + SB_CARDS)) {
+                // Widget ids belong to the old install; they show as "unavailable" until removed.
+                org.json.JSONArray a = o.getJSONArray(k), keep = new org.json.JSONArray();
+                for (int i = 0; i < a.length(); i++) {
+                    JSONObject c = a.optJSONObject(i);
+                    if (c != null && c.has("id")) keep.put(new JSONObject().put("id", c.optInt("id")).put("h", c.optInt("h", 160)));
+                }
+                e.putString(k, keep.toString());
+                continue;
+            }
             boolean surface = false;
             for (String p : BG_SURFACES) if (k.startsWith(p + "_bg_")) surface = true;
             if (surface) {

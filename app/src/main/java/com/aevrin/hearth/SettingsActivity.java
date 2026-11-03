@@ -419,6 +419,8 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         header(title);
         toggle(R.string.sidebar_enabled, prefs.sidebar(side), v -> { prefs.setSidebar(side, v); build(); });
         if (!prefs.sidebar(side)) return;
+        choice(R.string.sidebar_style, new int[] {R.string.sb_style_shortcuts, R.string.sb_style_panel},
+                prefs.sidebarStyle(side), i -> prefs.setSidebarStyle(side, i));
         backgroundControls(side);
     }
 

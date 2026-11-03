@@ -94,6 +94,7 @@ public class HomeActivity extends Activity
     // A widget being added: waiting on the bind permission or its setup screen.
     private int pendingWidgetId = -1;
     private int pendingWidgetPage;
+    private String pendingWidgetSidebar; // non-null when the widget being added goes to a sidebar panel
     private String pendingFolderImage; // folder id waiting for a picked picture
     /** Rendered custom folder icons, by folder id + icon + theme. */
     private final Map<String, android.graphics.Bitmap> folderIcons = new HashMap<>();
@@ -202,6 +203,7 @@ public class HomeActivity extends Activity
         if (savedInstanceState != null) {
             pendingWidgetId = savedInstanceState.getInt("pending_widget", -1);
             pendingWidgetPage = savedInstanceState.getInt("pending_widget_page", 0);
+            pendingWidgetSidebar = savedInstanceState.getString("pending_widget_sidebar");
         }
 
         homeContent = findViewById(R.id.home_content);
@@ -358,6 +360,9 @@ public class HomeActivity extends Activity
 
     @Override
     protected void onStop() {
+        // Screen off or leaving home: nothing stays open.
+        sidebar.closeNow();
+        folders.closeNow();
         if (statusRegistered) {
             unregisterReceiver(statusReceiver);
             statusRegistered = false;
@@ -374,6 +379,7 @@ public class HomeActivity extends Activity
         super.onSaveInstanceState(out);
         out.putInt("pending_widget", pendingWidgetId);
         out.putInt("pending_widget_page", pendingWidgetPage);
+        out.putString("pending_widget_sidebar", pendingWidgetSidebar);
     }
 
     @Override
@@ -469,6 +475,32 @@ public class HomeActivity extends Activity
     @Override public int sidebarIconPx() { return drawerIconPx; }
     @Override public boolean launchTarget(String spec, View from) { return Targets.launch(this, repo, prefs, spec, from); }
     @Override public void sidebarChanged() { syncPins(); }
+
+    @Override public View sidebarWidget(int id) { return widgetViewFor(id); }
+
+    @Override public void addSidebarWidget(String side) {
+        new WidgetPicker(this, this::spanX, this::spanY).show(info -> {
+            pendingWidgetSidebar = side;
+            addWidget(info);
+        });
+    }
+
+    @Override public void removeSidebarWidget(int id) {
+        widgetViews.remove(id);
+        widgetHost.deleteAppWidgetId(id);
+    }
+
+    @Override public boolean widgetHasSettings(int id) {
+        return reconfigurable(widgetManager.getAppWidgetInfo(id));
+    }
+
+    @Override public void openWidgetSettings(int id) {
+        try {
+            widgetHost.startAppWidgetConfigureActivityForResult(this, id, 0, REQ_WIDGET_RECONFIGURE, null);
+        } catch (ActivityNotFoundException | SecurityException e) {
+            Toast.makeText(this, R.string.widget_failed, Toast.LENGTH_SHORT).show();
+        }
+    }
 
     /** An icon view for an app or shortcut key, or null if it can't be shown right now. */
     @Override
@@ -726,7 +758,7 @@ public class HomeActivity extends Activity
                 edgeStartTime = ev.getEventTime();
                 return false;
             case MotionEvent.ACTION_MOVE: {
-                if (sidebar.isOpen() && edgeSide == Sidebar.NONE) {
+                if (sidebar.isOpen() && edgeSide == Sidebar.NONE && !sidebar.isPanel()) {
                     // Open: a swipe back toward its edge closes it.
                     float back = sidebar.side() == Sidebar.LEFT ? closeStartX - x : x - closeStartX;
                     if (back > dp(48)) {
@@ -1934,7 +1966,9 @@ public class HomeActivity extends Activity
         if (ids == null) return;
         for (int id : ids) {
             if (id == pendingWidgetId) continue;
-            if (!layout.contains(HomeLayout.WIDGET_PREFIX + id)) widgetHost.deleteAppWidgetId(id);
+            if (!layout.contains(HomeLayout.WIDGET_PREFIX + id) && !prefs.sidebarWidgetIds().contains(id)) {
+                widgetHost.deleteAppWidgetId(id);
+            }
         }
     }
 
@@ -1955,6 +1989,7 @@ public class HomeActivity extends Activity
     }
 
     private void pickWidget() {
+        pendingWidgetSidebar = null;
         new WidgetPicker(this, this::spanX, this::spanY).show(this::addWidget);
     }
 
@@ -2003,6 +2038,22 @@ public class HomeActivity extends Activity
         pendingWidgetId = -1;
         if (info == null) {
             widgetHost.deleteAppWidgetId(id);
+            pendingWidgetSidebar = null;
+            return;
+        }
+        if (pendingWidgetSidebar != null) {
+            // Into a sidebar panel: a card at the widget's preferred height, then show it.
+            String side = pendingWidgetSidebar;
+            pendingWidgetSidebar = null;
+            float d = getResources().getDisplayMetrics().density;
+            int h = info.targetCellHeight > 0 && grid.cellHeight() > 0
+                    ? info.targetCellHeight * grid.cellHeight() / layout.sub() : info.minHeight;
+            int dpH = Math.max(96, Math.min(480, Math.round(h / d) + 16));
+            List<int[]> cards = prefs.sidebarCards(side);
+            cards.add(new int[] {id, dpH});
+            prefs.setSidebarCards(side, cards);
+            sidebar.open(Prefs.SIDEBAR_RIGHT.equals(side) ? Sidebar.RIGHT : Sidebar.LEFT);
+            sidebar.refresh();
             return;
         }
         HomeLayout.Item it = layout.addWidget(id, pendingWidgetPage, spanX(info), spanY(info));
@@ -2018,6 +2069,7 @@ public class HomeActivity extends Activity
     private void abandonWidget() {
         if (pendingWidgetId >= 0) widgetHost.deleteAppWidgetId(pendingWidgetId);
         pendingWidgetId = -1;
+        pendingWidgetSidebar = null;
         Toast.makeText(this, R.string.widget_failed, Toast.LENGTH_SHORT).show();
     }
 
@@ -2036,6 +2088,7 @@ public class HomeActivity extends Activity
         if (resultCode != RESULT_OK) {
             widgetHost.deleteAppWidgetId(id); // cancelled: let the id go quietly
             pendingWidgetId = -1;
+            pendingWidgetSidebar = null;
             return;
         }
         if (requestCode == REQ_WIDGET_BIND) configureOrPlace(id);
@@ -2044,7 +2097,11 @@ public class HomeActivity extends Activity
 
     /** The view for a widget item: reused if we have it, a placeholder if the widget's gone. */
     private View widgetView(HomeLayout.Item item) {
-        int id = HomeLayout.widgetId(item);
+        return widgetViewFor(HomeLayout.widgetId(item));
+    }
+
+    /** A widget's view by id (home or sidebar), reused if we have it; a placeholder if it's gone. */
+    private View widgetViewFor(int id) {
         AppWidgetProviderInfo info = id < 0 ? null : widgetManager.getAppWidgetInfo(id);
         if (info == null) {
             // Restored from a backup on another install, or its app was uninstalled.
