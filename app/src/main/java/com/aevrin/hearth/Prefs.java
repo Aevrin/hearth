@@ -136,6 +136,50 @@ final class Prefs {
 
     Prefs(Context c) {
         sp = c.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
+        surfaceRgb = sp.getInt(SURFACE, 0xFF000000 | BG_RGB) & 0x00FFFFFF;
+    }
+
+    /* ---------- base surface (themes) ---------- */
+
+    static final String SURFACE = "surface_color";
+    static final String THEME_UNDO = "theme_undo"; // not backed up
+    /**
+     * The base colour behind the drawer, dock, folders and sidebars. Kept in a
+     * static so the many static helpers (and every screen) share it; refreshed
+     * whenever a Prefs is created or the colour changes.
+     */
+    private static int surfaceRgb = BG_RGB;
+
+    /** The look saved before the last theme was applied (for Undo), or null. */
+    String themeUndo() { return sp.getString(THEME_UNDO, null); }
+    void saveThemeUndo(String json) {
+        if (json == null) sp.edit().remove(THEME_UNDO).apply();
+        else sp.edit().putString(THEME_UNDO, json).apply();
+    }
+
+    int surface() { return 0xFF000000 | surfaceRgb; }
+    void setSurface(int color) {
+        sp.edit().putInt(SURFACE, color | 0xFF000000).apply();
+        surfaceRgb = color & 0x00FFFFFF;
+    }
+
+    /** A light base (the White and Paper themes): text and icons go dark. */
+    static boolean lightSurface() {
+        return Color.luminance(0xFF000000 | surfaceRgb) > 0.5f;
+    }
+
+    /** Main text on the base colour (and labels over the wallpaper). */
+    static int textColor() { return lightSurface() ? 0xFF1A2230 : 0xFFE6F0FF; }
+    static int mutedTextColor() { return lightSurface() ? 0x991A2230 : 0x99E6F0FF; }
+
+    /** A slightly raised version of the base: icon plates, search box. */
+    static int elevated() {
+        int base = 0xFF000000 | surfaceRgb;
+        int toward = lightSurface() ? 0xFF000000 : 0xFFFFFFFF;
+        float t = lightSurface() ? 0.07f : 0.08f;
+        return Color.rgb(Math.round(Color.red(base) + (Color.red(toward) - Color.red(base)) * t),
+                Math.round(Color.green(base) + (Color.green(toward) - Color.green(base)) * t),
+                Math.round(Color.blue(base) + (Color.blue(toward) - Color.blue(base)) * t));
     }
 
     /* ---------- appearance ---------- */
@@ -219,7 +263,7 @@ final class Prefs {
     /** Applies the label settings to one label. */
     void styleLabel(android.widget.TextView t) {
         t.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, labelSp());
-        if (labelAccent()) accentStyle().paint(t); else Accent.plain(t, 0xFFE6F0FF);
+        if (labelAccent()) accentStyle().paint(t); else Accent.plain(t, textColor());
         if (labelShadow()) t.setShadowLayer(4f, 0f, 1f, 0xCC000000); else t.setShadowLayer(0f, 0f, 0f, 0);
         t.setMaxLines(labelTwoLines() ? 2 : 1);
     }
@@ -640,6 +684,7 @@ final class Prefs {
             o.put(side + BG_OPACITY, bgOpacity(side));
         }
         o.put(SIDEBAR_RIGHT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_RIGHT)));
+        o.put(SURFACE, String.format("#%08X", surface()));
         o.put(BACKUP_NOTES, backupNotes());
         JSONObject notes = new JSONObject(), lists = new JSONObject();
         for (String side : new String[] {SIDEBAR_LEFT, SIDEBAR_RIGHT}) {
@@ -701,6 +746,12 @@ final class Prefs {
             }
             if (k.equals(NEXT_NOTE)) {
                 e.putInt(k, Math.max(sp.getInt(NEXT_NOTE, 1), o.getInt(k)));
+                continue;
+            }
+            if (k.equals(SURFACE)) {
+                int c = Color.parseColor(o.getString(k)) | 0xFF000000;
+                e.putInt(k, c);
+                surfaceRgb = c & 0x00FFFFFF;
                 continue;
             }
             if (k.equals(BACKUP_NOTES)) {
@@ -778,7 +829,7 @@ final class Prefs {
     /** The base background colour at a 0–100 opacity. */
     static int background(int opacity) {
         return Color.argb(Math.round(clamp(opacity, 0, 100) * 2.55f),
-                Color.red(BG_RGB), Color.green(BG_RGB), Color.blue(BG_RGB));
+                Color.red(surfaceRgb), Color.green(surfaceRgb), Color.blue(surfaceRgb));
     }
 
     private static int clamp(int v, int min, int max) {

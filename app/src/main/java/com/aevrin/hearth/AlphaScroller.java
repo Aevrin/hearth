@@ -60,7 +60,7 @@ public class AlphaScroller extends View {
         for (int i = 0; i < letters.size(); i++) {
             if (i % every != 0 && i != active) continue;
             float t = letters.size() > 1 ? (float) i / (letters.size() - 1) : 0f;
-            text.setColor(i == active ? accent.at(t) : 0xB3E6F0FF);
+            text.setColor(i == active ? accent.at(t) : Accent.withAlpha(Prefs.textColor(), 0xB3));
             text.setFakeBoldText(i == active);
             float y = getPaddingTop() + slot * i + slot / 2f - (fm.ascent + fm.descent) / 2f;
             c.drawText(letters.get(i), getWidth() / 2f, y, text);

@@ -321,4 +321,21 @@
     <string name="note_delete_confirm">Delete this note? Its text will be gone.</string>
     <string name="checklist_delete_confirm">Delete this checklist and all its items?</string>
     <string name="backup_notes">Include notes and checklists in backups</string>
+
+    <!-- Themes -->
+    <string name="section_themes">Themes</string>
+    <string name="theme_hearth">Hearth</string>
+    <string name="theme_black">Black</string>
+    <string name="theme_white">White</string>
+    <string name="theme_aevrin">Aevrin</string>
+    <string name="theme_forest">Forest</string>
+    <string name="theme_dusk">Dusk</string>
+    <string name="theme_paper">Paper</string>
+    <string name="theme_mono">Mono</string>
+    <string name="theme_applied">%1$s theme applied</string>
+    <string name="theme_undo">Undo last theme</string>
+    <string name="theme_note">A theme sets colours, the icon style and backgrounds. Your layout, apps, folders, gestures and clock settings stay as they are, and anything can be fine-tuned afterwards.</string>
+    <string name="base_colour">Base colour</string>
+    <string name="base_colour_pick">Colour</string>
+    <string name="base_colour_note">Behind the app drawer, dock, folders and sidebars, and the icon plates. A light base switches text to dark.</string>
 </resources>

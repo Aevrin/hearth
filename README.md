@@ -107,6 +107,11 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - Swipe down at the top of the list, Back, or Home closes it.
 - **Settings** (long-press empty home space → Hearth settings): a main list of categories, each
   opening its own page. The main page also shows whether Hearth is the default home app.
+  - **Themes:** one-tap looks: **Hearth**, **Black** (true black for OLED), **White**, **Aevrin**
+    (blue-to-aquamarine gradient, see-through drawer, themed circles), **Forest**, **Dusk**,
+    **Paper** and **Mono**. A theme sets colours, icon style and backgrounds only (layout, apps,
+    folders, gestures and clock stay), with **Undo**. A **base colour** setting decides what the
+    drawer, dock, folders, sidebars and icon plates are made of; a light base turns text dark.
   - **Appearance:** accent as a **solid colour** (presets or any colour) or a **gradient** (presets,
     or pick start and end, swap them, choose diagonal / horizontal / vertical). The clock, headings,
     accent labels, themed and duotone icons, page dots and drop highlights use the full gradient;

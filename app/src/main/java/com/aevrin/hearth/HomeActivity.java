@@ -630,6 +630,10 @@ public class HomeActivity extends Activity
         }
         clockTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, prefs.showSeconds() ? 52 : 64);
         drawerList.setVerticalScrollbarThumbDrawable(roundedBar(style));
+        GradientDrawable searchBg = new GradientDrawable(); // follows the base colour
+        searchBg.setColor(Prefs.elevated());
+        searchBg.setCornerRadius(dp(24));
+        search.setBackground(searchBg);
         statusAlarm.setCompoundDrawableTintList(ColorStateList.valueOf(accent));
         statusBattery.setCompoundDrawableTintList(ColorStateList.valueOf(accent));
         style.paint(statusAlarm);
@@ -638,14 +642,14 @@ public class HomeActivity extends Activity
         updateStatus();
         applySystemBars();
         // "Text in accent colour" reaches the search box and the empty-screen hint too.
-        int text = getColor(R.color.text_primary);
+        int text = Prefs.textColor();
         if (prefs.labelAccent()) {
             search.setTextColor(accent);
             search.setHintTextColor(Accent.withAlpha(accent, 150));
             style.paint(emptyHint);
         } else {
             search.setTextColor(text);
-            search.setHintTextColor(getColor(R.color.text_muted));
+            search.setHintTextColor(Prefs.mutedTextColor());
             Accent.plain(emptyHint, text);
         }
     }
@@ -1048,7 +1052,8 @@ public class HomeActivity extends Activity
             GradientDrawable d = new GradientDrawable();
             d.setShape(GradientDrawable.OVAL);
             // With a gradient, the current dot takes its colour from its place along the row.
-            d.setColor(i == current ? prefs.accentStyle().at(count > 1 ? (float) i / (count - 1) : 0f) : 0x80E6F0FF);
+            d.setColor(i == current ? prefs.accentStyle().at(count > 1 ? (float) i / (count - 1) : 0f)
+                    : Accent.withAlpha(Prefs.textColor(), 0x80));
             dot.setBackground(d);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
             lp.setMarginStart(gap);
@@ -2108,7 +2113,7 @@ public class HomeActivity extends Activity
             TextView t = new TextView(this);
             t.setText(R.string.widget_unavailable);
             t.setGravity(Gravity.CENTER);
-            t.setTextColor(0xCCE6F0FF);
+            t.setTextColor(Accent.withAlpha(Prefs.textColor(), 0xCC));
             t.setPadding(Math.round(dp(8)), 0, Math.round(dp(8)), 0);
             GradientDrawable bg = new GradientDrawable();
             bg.setColor(Prefs.background(50));

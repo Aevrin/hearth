@@ -180,7 +180,7 @@ final class FolderPanel {
         if (f == null) return;
         title.setText(nameOf(f));
         if (host.prefs().labelAccent()) host.prefs().accentStyle().paint(title);
-        else Accent.plain(title, activity.getColor(R.color.text_primary));
+        else Accent.plain(title, Prefs.textColor());
         grid.removeAllViews();
         int[] m = metrics(activity, host.prefs(), host.homeIconPx());
         int cellW = m[0], cellH = m[1], gap = m[2];

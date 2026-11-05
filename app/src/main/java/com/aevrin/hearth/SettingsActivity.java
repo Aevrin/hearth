@@ -211,6 +211,29 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
     }
 
     private void buildAppearance() {
+        header(R.string.section_themes);
+        themeStrip();
+        if (prefs.themeUndo() != null) {
+            button(R.string.theme_undo, v -> {
+                try {
+                    Themes.undo(prefs);
+                } catch (org.json.JSONException ignored) { }
+                accentChanged();
+            });
+        }
+        note(R.string.theme_note);
+
+        header(R.string.base_colour);
+        LinearLayout baseRow = new LinearLayout(this);
+        LinearLayout.LayoutParams brp = matchWrap();
+        brp.topMargin = dp(8);
+        content.addView(baseRow, brp);
+        baseRow.addView(colourButton(R.string.base_colour_pick, prefs.surface(), () -> showColorPicker(prefs.surface(), c -> {
+            prefs.setSurface(c);
+            accentChanged();
+        })));
+        note(R.string.base_colour_note);
+
         header(R.string.accent_colour);
         Accent a = prefs.accentStyle();
         choice(R.string.accent_mode, new int[] {R.string.accent_solid, R.string.accent_gradient},
@@ -423,6 +446,73 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         choice(R.string.sidebar_style, new int[] {R.string.sb_style_shortcuts, R.string.sb_style_panel},
                 prefs.sidebarStyle(side), i -> prefs.setSidebarStyle(side, i));
         backgroundControls(side);
+    }
+
+    /** A row of theme previews: base colour, accent bar, a few icon dots and the name. Tap to apply. */
+    private void themeStrip() {
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout strip = new LinearLayout(this);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        strip.setPadding(0, dp(10), 0, dp(6));
+        hs.addView(strip);
+        for (Themes.Theme t : Themes.ALL) {
+            LinearLayout tile = new LinearLayout(this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setGravity(Gravity.CENTER_HORIZONTAL);
+            tile.setPadding(dp(10), dp(10), dp(10), dp(8));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(0xFF000000 | t.surface);
+            bg.setCornerRadius(dp(16));
+            bg.setStroke(dp(1), 0x40E6F0FF);
+            tile.setBackground(bg);
+            boolean lightBase = android.graphics.Color.luminance(0xFF000000 | t.surface) > 0.5f;
+            // Accent bar.
+            View bar = new View(this);
+            GradientDrawable ab = t.gradient
+                    ? new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[] {0xFF000000 | t.accent, 0xFF000000 | t.accentEnd})
+                    : new GradientDrawable();
+            if (!t.gradient) ab.setColor(0xFF000000 | t.accent);
+            ab.setCornerRadius(dp(3));
+            bar.setBackground(ab);
+            tile.addView(bar, new LinearLayout.LayoutParams(dp(64), dp(6)));
+            // Three "icons".
+            LinearLayout dots = new LinearLayout(this);
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            dlp.topMargin = dp(10);
+            tile.addView(dots, dlp);
+            for (int i = 0; i < 3; i++) {
+                View d = new View(this);
+                GradientDrawable dd = new GradientDrawable();
+                dd.setShape(GradientDrawable.OVAL);
+                dd.setColor(i == 1 ? (0xFF000000 | t.accentEnd) : (lightBase ? 0x22000000 : 0x33FFFFFF));
+                d.setBackground(dd);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(16), dp(16));
+                lp.setMarginStart(i == 0 ? 0 : dp(6));
+                dots.addView(d, lp);
+            }
+            TextView name = new TextView(this);
+            name.setText(t.name);
+            name.setTextSize(13);
+            name.setTextColor(lightBase ? 0xFF1A2230 : 0xFFE6F0FF);
+            LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            nlp.topMargin = dp(8);
+            tile.addView(name, nlp);
+            tile.setContentDescription(getString(t.name));
+            tile.setOnClickListener(v -> {
+                try {
+                    Themes.apply(prefs, t);
+                } catch (org.json.JSONException ignored) { }
+                accentChanged(); // re-render icons and this page
+                Toast.makeText(this, getString(R.string.theme_applied, getString(t.name)), Toast.LENGTH_SHORT).show();
+            });
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(dp(96), LinearLayout.LayoutParams.WRAP_CONTENT);
+            tlp.setMarginEnd(dp(10));
+            strip.addView(tile, tlp);
+        }
+        content.addView(hs, matchWrap());
     }
 
     /** Theme / colour / gradient, colour pickers, direction and opacity for one surface. */

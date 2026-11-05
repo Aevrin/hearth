@@ -58,7 +58,7 @@ final class FolderIconView extends View {
             int alpha = Math.round(opacity * 2.55f);
             if (fill == null) {
                 plate.setShader(null);
-                plate.setColor(Accent.withAlpha(0xFF192534, alpha));
+                plate.setColor(Accent.withAlpha(Prefs.elevated(), alpha));
             } else {
                 plate.setColor(Accent.withAlpha(fill.solid(), alpha));
                 plate.setShader(fill.shader(0, 0, size, size, alpha));

@@ -49,9 +49,9 @@ final class IconTheme {
     /** Rendering size; ImageViews scale it to the chosen icon size. */
     static final int SIZE = 192;
 
-    private static final int PLATE = 0xFF192534;      // themed / legacy plate
+    private final int PLATE;                           // themed / legacy plate: follows the base colour
     private static final int DUO_DARK = 0xFF12233A;   // duotone shadows
-    private static final int LETTER_TEXT = 0xFFE6F0FF;
+    private final int LETTER_TEXT;
 
     final String style;
     final String shape;
@@ -61,15 +61,21 @@ final class IconTheme {
     final String signature;
 
     IconTheme(String style, String shape, Accent accent, Map<String, String> overrides) {
+        this(style, shape, accent, overrides, 0xFF192534);
+    }
+
+    IconTheme(String style, String shape, Accent accent, Map<String, String> overrides, int plate) {
+        this.PLATE = plate | 0xFF000000;
+        this.LETTER_TEXT = Color.luminance(PLATE) > 0.5f ? 0xFF1A2230 : 0xFFE6F0FF;
         this.style = style;
         this.shape = shape;
         this.accent = accent;
         this.overrides = overrides == null ? Collections.emptyMap() : overrides;
-        this.signature = style + "|" + shape + "|" + accent.signature() + "|" + new java.util.TreeMap<>(this.overrides);
+        this.signature = style + "|" + shape + "|" + accent.signature() + "|" + Integer.toHexString(PLATE) + "|" + new java.util.TreeMap<>(this.overrides);
     }
 
     static IconTheme from(Prefs p) {
-        return new IconTheme(p.iconStyle(), p.iconShape(), p.accentStyle(), p.iconOverrides());
+        return new IconTheme(p.iconStyle(), p.iconShape(), p.accentStyle(), p.iconOverrides(), Prefs.elevated());
     }
 
     String styleFor(String key) {

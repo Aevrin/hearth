@@ -186,7 +186,7 @@ final class Sidebar {
         if (fill == null) {
             bg = new GradientDrawable();
             bg.setColor(Prefs.background(opacity));
-            light = false;
+            light = opacity > 45 && Prefs.lightSurface();
         } else {
             bg = fill.drawable();
             bg.setAlpha(Math.round(opacity * 2.55f));
