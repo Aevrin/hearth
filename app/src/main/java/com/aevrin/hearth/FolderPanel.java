@@ -45,8 +45,11 @@ final class FolderPanel {
         void rename(AppEntry app);
         void changeIcon(AppEntry app);
         void afterLayout(View v, Runnable r);
-        /** A long-press inside the folder: becomes a drag if the finger moves. */
-        void armFolderDrag(HomeLayout.Folder f, String key, View v, PopupMenu menu);
+        /**
+         * A long-press inside the folder: becomes a drag if the finger moves, or
+         * shows the menu (from `menu`) if it stays still a moment or lets go.
+         */
+        void armFolderDrag(HomeLayout.Folder f, String key, View v, java.util.function.Supplier<PopupMenu> menu);
     }
 
     private final Activity activity;
@@ -196,8 +199,12 @@ final class FolderPanel {
             });
             v.setTag(key); // read back when the order changes by dragging
             v.setOnLongClickListener(view -> {
-                PopupMenu menu = showEntryMenu(f, key, view);
-                if (!host.prefs().lockLayout()) host.armFolderDrag(f, key, view, menu);
+                if (host.prefs().lockLayout()) {
+                    showEntryMenu(f, key, view); // locked: menu only
+                } else {
+                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                    host.armFolderDrag(f, key, view, () -> entryMenu(f, key, view));
+                }
                 return true;
             });
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
@@ -226,6 +233,11 @@ final class FolderPanel {
 
     private PopupMenu showEntryMenu(HomeLayout.Folder f, String key, View anchor) {
         anchor.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        return entryMenu(f, key, anchor);
+    }
+
+    /** The menu itself, without the buzz (that came with the long-press). */
+    private PopupMenu entryMenu(HomeLayout.Folder f, String key, View anchor) {
         AppEntry app = host.repo().find(key);
         boolean locked = host.prefs().lockLayout();
         PopupMenu menu = new PopupMenu(activity, anchor);

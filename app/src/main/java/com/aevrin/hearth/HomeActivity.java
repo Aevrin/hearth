@@ -164,8 +164,11 @@ public class HomeActivity extends Activity
     private Runnable pendingEdgeFlip;
     private int pendingEdgeDirection;
     private final Rect scratch = new Rect();
-    private DragState pendingDrag;  // a drawer long-press that turns into a drag if the finger moves
-    private PopupMenu pendingMenu;  // ...in which case its menu goes away
+    private DragState pendingDrag;  // a long-press that turns into a drag if the finger moves...
+    private PopupMenu pendingMenu;  // ...in which case its menu (if already showing) goes away
+    /** After a long-press, how long to wait for movement before showing the menu. */
+    private static final long MENU_DELAY_MS = 320;
+    private Runnable pendingMenuShow; // shows the menu if the finger stays still
 
     private final OnBackInvokedCallback closeDrawerOnBack = this::closeDrawer;
 
@@ -550,7 +553,7 @@ public class HomeActivity extends Activity
     }
 
     @Override
-    public void armFolderDrag(HomeLayout.Folder f, String key, View v, PopupMenu menu) {
+    public void armFolderDrag(HomeLayout.Folder f, String key, View v, java.util.function.Supplier<PopupMenu> menu) {
         DragState st = new DragState(null, key, repo.find(key), v, false);
         st.folder = f;
         armDrag(st, menu);
@@ -1335,8 +1338,8 @@ public class HomeActivity extends Activity
 
     /* ---------- drag and drop ---------- */
 
-    // Same as the drawer: the menu opens straight away; moving the finger closes it
-    // and picks the item up. Locked: menu only, nothing moves.
+    // Long-press: a buzz, then either a drag (if the finger moves within a moment)
+    // or the menu (if it stays still or lets go). Locked: menu only, nothing moves.
     private void onItemLongPress(HomeLayout.Item item, View view) {
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         if (HomeLayout.isWidgetKey(item.key)) {
@@ -1351,19 +1354,38 @@ public class HomeActivity extends Activity
             armDrag(st, null);
             return;
         }
-        PopupMenu menu = showItemMenu(item, view);
-        if (prefs.lockLayout()) return;
-        armDrag(new DragState(item, item.key, repo.find(item.key), view, false), menu);
+        if (prefs.lockLayout()) {
+            showItemMenu(item, view); // locked: menu only, nothing moves
+            return;
+        }
+        armDrag(new DragState(item, item.key, repo.find(item.key), view, false), () -> showItemMenu(item, view));
     }
 
     /** Waits to see whether a long-press turns into a drag (see trackPendingDrag). */
-    private void armDrag(DragState st, PopupMenu menu) {
+    /**
+     * After a long-press: moving the finger soon makes it a drag, with no menu.
+     * Staying still a moment longer, or letting go, shows the menu (if any).
+     */
+    private void armDrag(DragState st, java.util.function.Supplier<PopupMenu> menu) {
         // Stop a scrolling parent (the drawer list) taking the gesture meanwhile.
         if (st.view.getParent() != null) st.view.getParent().requestDisallowInterceptTouchEvent(true);
         st.startX = lastTouchX;
         st.startY = lastTouchY;
         pendingDrag = st;
-        pendingMenu = menu;
+        pendingMenu = null;
+        cancelMenuShow();
+        if (menu != null) {
+            pendingMenuShow = () -> {
+                pendingMenuShow = null;
+                if (pendingDrag == st) pendingMenu = menu.get();
+            };
+            handler.postDelayed(pendingMenuShow, MENU_DELAY_MS);
+        }
+    }
+
+    private void cancelMenuShow() {
+        if (pendingMenuShow != null) handler.removeCallbacks(pendingMenuShow);
+        pendingMenuShow = null;
     }
 
     private void startDrag(DragState st) {
@@ -2488,9 +2510,11 @@ public class HomeActivity extends Activity
     @Override
     public void onAppLongClick(AppEntry app, View view) {
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-        PopupMenu menu = showAppMenu(app, view, null);
-        if (prefs.lockLayout()) return;
-        armDrag(new DragState(null, app.key, app, view, true), menu);
+        if (prefs.lockLayout()) {
+            showAppMenu(app, view, null);
+            return;
+        }
+        armDrag(new DragState(null, app.key, app, view, true), () -> showAppMenu(app, view, null));
     }
 
     // The rest of the long-press gesture still comes to this window, even with the menu up.
@@ -2500,6 +2524,7 @@ public class HomeActivity extends Activity
                 if (Math.hypot(ev.getRawX() - pendingDrag.startX, ev.getRawY() - pendingDrag.startY) < dp(12)) return;
                 DragState st = pendingDrag;
                 pendingDrag = null;
+                cancelMenuShow(); // it's a drag: no menu
                 if (pendingMenu != null) pendingMenu.dismiss();
                 pendingMenu = null;
                 st.movedFar = true;
@@ -2508,12 +2533,16 @@ public class HomeActivity extends Activity
                 return;
             case MotionEvent.ACTION_UP: {
                 Runnable release = pendingDrag.onRelease;
+                Runnable menu = pendingMenuShow;
+                cancelMenuShow();
+                if (menu != null) menu.run(); // let go before the menu appeared: show it now
                 pendingDrag = null;   // let go without moving: the menu stays
                 pendingMenu = null;
                 if (release != null) handler.post(release);
                 return;
             }
             case MotionEvent.ACTION_CANCEL:
+                cancelMenuShow();
                 pendingDrag = null;
                 pendingMenu = null;
                 return;
