@@ -90,11 +90,14 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     get a **Widget settings** button under the frame. Putting a widget down after dragging it
     also leaves it in resize mode, and in resize mode you can drag the widget itself to move it
     again. Tap outside or Back to finish.
-  - Icons slide around widgets, never through them. Widgets live on home pages only (not the dock
-    or folders). A widget whose app was uninstalled, or one restored from a backup on another
+  - Icons slide around widgets, never through them. Widgets go on home pages, or in the dock if
+    they're one row tall (never in folders). A widget whose app was uninstalled, or one restored from a backup on another
     phone, shows as "Widget unavailable" until you remove it.
 - **Dock:** label-less icons on a translucent bar, with up to three **dock pages** you swipe
-  across the dock itself. When the dock is hidden, an arrow at the bottom opens the drawer.
+  across the dock itself (optionally **infinite**, going round from the last to the first). Home
+  returns the dock to its first page (switchable). **One-row widgets** can be dragged into the dock,
+  taking as many slots as they're wide, and resized sideways there. When the dock is hidden, an
+  arrow at the bottom opens the drawer.
 - **App drawer:** swipe up anywhere on the home screen.
   - Alphabetical grid with a search box and an **A–Z strip** down the side. Matches ignore case
     and accents, and names that *start* with your search come first. Go opens the top match.

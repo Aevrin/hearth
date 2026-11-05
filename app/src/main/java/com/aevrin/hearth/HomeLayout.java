@@ -131,7 +131,7 @@ final class HomeLayout {
                     if (isFolderKey(key) && !layout.folders.containsKey(folderId(key))) continue;
                     Item it = new Item(key, c, o.optInt("page", 0), o.getInt("x"), o.getInt("y"));
                     if (isWidgetKey(key)) {
-                        it.container = HOME; // widgets live on home pages only
+                        // Home pages, or the dock for one-row widgets.
                         it.spanX = Math.max(1, o.optInt("w", 1));
                         it.spanY = Math.max(1, o.optInt("h", 1));
                     } else if (HOME.equals(c)) {
@@ -220,7 +220,7 @@ final class HomeLayout {
 
     /** Whether a w×h area at (x, y) is entirely on the grid. */
     boolean fitsArea(String container, int page, int x, int y, int w, int h) {
-        if (DOCK.equals(container)) return w == 1 && h == 1 && fits(container, page, x, y);
+        if (DOCK.equals(container)) return h == 1 && w >= 1 && fits(container, page, x, y) && x + w <= dockSlots;
         return fits(container, page, x, y) && x + w <= columns && y + h <= rows;
     }
 
@@ -349,13 +349,31 @@ final class HomeLayout {
      * Moves an item, possibly to the other container or page; if the target is a
      * single taken cell, the two swap. A widget only moves into free cells.
      */
+    /**
+     * The size an item would have in a container, {w, h}, or null if it can't go
+     * there. Icons take the container's icon size. Widgets keep theirs, translated
+     * between the dock's whole slots and the home grid's (possibly half) cells; only
+     * widgets one row tall fit in the dock.
+     */
+    int[] spanIn(Item it, String container) {
+        if (!isWidgetKey(it.key)) return new int[] {iconSpan(container), iconSpan(container)};
+        boolean fromDock = DOCK.equals(it.container), toDock = DOCK.equals(container);
+        if (fromDock == toDock) return new int[] {it.spanX, it.spanY};
+        if (toDock) {
+            if (it.spanY > sub) return null; // taller than one row
+            return new int[] {Math.max(1, Math.min(dockSlots, (it.spanX + sub - 1) / sub)), 1};
+        }
+        return new int[] {Math.min(columns, it.spanX * sub), sub};
+    }
+
     void move(Item item, String container, int page, int x, int y) {
         // Icons take the target container's icon size; widgets keep theirs.
         boolean widget = isWidgetKey(item.key);
-        if (widget && DOCK.equals(container)) return;
-        int w = widget ? item.spanX : iconSpan(container), h = widget ? item.spanY : iconSpan(container);
+        int[] sp = spanIn(item, container);
+        if (sp == null) return;
+        int w = sp[0], h = sp[1];
         if (!fitsArea(container, page, x, y, w, h)) return;
-        if (w > 1 || h > 1) {
+        if (widget || w > 1 || h > 1) {
             if (!areaFree(container, page, x, y, w, h, item)) return;
             place(item, container, page, x, y, w, h);
             save();
@@ -363,7 +381,7 @@ final class HomeLayout {
         }
         Item other = at(container, page, x, y);
         if (other == item) return;
-        if (other != null && (other.spanX > 1 || other.spanY > 1)) return; // can't swap with a widget
+        if (other != null && (other.spanX > 1 || other.spanY > 1 || isWidgetKey(other.key))) return; // can't swap with a widget
         if (other != null) {
             // Swap: the other takes the dragged item's old spot (which fits it, being an icon's spot).
             int span = iconSpan(item.container);
@@ -638,6 +656,22 @@ final class HomeLayout {
             }
         }
         for (Item it : homeless) {
+            if (isWidgetKey(it.key) && DOCK.equals(it.container)) {
+                // A dock widget: another spot in the dock if one is wide enough...
+                int w = Math.min(it.spanX, dockSlots);
+                int[] a = freeDockArea(placed, Math.max(0, Math.min(it.page, dockPages - 1)), w);
+                if (a != null) {
+                    place(it, DOCK, a[0], a[1], 0, w, 1);
+                    placed.add(it);
+                    moved = true;
+                    continue;
+                }
+                // ...otherwise onto a home page, as a one-row widget.
+                it.spanX = it.spanX * sub;
+                it.spanY = sub;
+                it.container = HOME;
+                it.page = 0;
+            }
             if (isWidgetKey(it.key)) {
                 // A widget: shrink it to the grid if it's now bigger, then find room for it.
                 int w = Math.min(it.spanX, columns), h = Math.min(it.spanY, rows);
@@ -696,6 +730,16 @@ final class HomeLayout {
                 for (int x = 0; x + w <= columns; x++) {
                     if (!taken(placed, HOME, p, x, y, w, h)) return new int[] {p, x, y};
                 }
+            }
+        }
+        return null;
+    }
+
+    private int[] freeDockArea(List<Item> placed, int preferredPage, int w) {
+        for (int i = 0; i < dockPages; i++) {
+            int p = (preferredPage + i) % dockPages;
+            for (int x = 0; x + w <= dockSlots; x++) {
+                if (!taken(placed, DOCK, p, x, 0, w, 1)) return new int[] {p, x};
             }
         }
         return null;

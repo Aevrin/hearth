@@ -338,4 +338,9 @@
     <string name="base_colour">Base colour</string>
     <string name="base_colour_pick">Colour</string>
     <string name="base_colour_note">Behind the app drawer, dock, folders and sidebars, and the icon plates. A light base switches text to dark.</string>
+
+    <!-- Dock -->
+    <string name="dock_wrap">Infinite scroll (last page goes round to the first)</string>
+    <string name="dock_home_reset">Home button returns the dock to page 1</string>
+    <string name="dock_widget_note">Widgets one row tall can be dragged into the dock; they take as many slots as they are wide, and resize sideways there.</string>
 </resources>

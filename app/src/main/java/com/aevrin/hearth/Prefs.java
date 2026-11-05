@@ -105,6 +105,8 @@ final class Prefs {
     static final String NEW_DOTS = "new_dots";
     static final String SEEN_NEW = "seen_new"; // not backed up
     static final String DRAWER_SORT = "drawer_sort";
+    static final String DOCK_WRAP = "dock_wrap";
+    static final String DOCK_HOME_RESET = "dock_home_reset";
     static final int SORT_AZ = 0, SORT_MOST_USED = 1, SORT_RECENT = 2;
     /** How long a newly installed app keeps its dot (unless opened sooner). */
     static final long NEW_FOR_MS = 3L * 24 * 60 * 60 * 1000;
@@ -321,6 +323,13 @@ final class Prefs {
     int sidebarHandlePos() { return clamp(sp.getInt(SIDEBAR_HANDLE_POS, HANDLE_MIDDLE), HANDLE_TOP, HANDLE_BOTTOM); }
     void setSidebarHandlePos(int v) { sp.edit().putInt(SIDEBAR_HANDLE_POS, v).apply(); }
     boolean sidebarHandleShown() { return sp.getBoolean(SIDEBAR_HANDLE_SHOWN, true); }
+    /** Swiping past the last dock page goes round to the first. */
+    boolean dockWrap() { return sp.getBoolean(DOCK_WRAP, false); }
+    void setDockWrap(boolean v) { sp.edit().putBoolean(DOCK_WRAP, v).apply(); }
+    /** Home on the home screen also returns the dock to its first page. */
+    boolean dockHomeReset() { return sp.getBoolean(DOCK_HOME_RESET, true); }
+    void setDockHomeReset(boolean v) { sp.edit().putBoolean(DOCK_HOME_RESET, v).apply(); }
+
     boolean showNextAlarm() { return sp.getBoolean(SHOW_NEXT_ALARM, false); }
     void setShowNextAlarm(boolean v) { sp.edit().putBoolean(SHOW_NEXT_ALARM, v).apply(); }
     boolean showBattery() { return sp.getBoolean(SHOW_BATTERY, false); }
@@ -675,6 +684,8 @@ final class Prefs {
         o.put(SHOW_BATTERY, showBattery());
         o.put(NEW_DOTS, newDots());
         o.put(DRAWER_SORT, drawerSort());
+        o.put(DOCK_WRAP, dockWrap());
+        o.put(DOCK_HOME_RESET, dockHomeReset());
         o.put(SIDEBAR_LEFT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_LEFT)));
         for (String side : BG_SURFACES) {
             o.put(side + BG_MODE, bgMode(side));
@@ -779,7 +790,7 @@ final class Prefs {
                 case SCROLL_WALLPAPER: case ALLOW_ROTATION: case AZ_SCROLLER: case MOST_USED:
                 case ACCENT_GRADIENT: case SUBGRID: case SEARCH_ON_PULL:
                 case SIDEBAR_LEFT: case SIDEBAR_RIGHT: case SIDEBAR_HANDLE_SHOWN:
-                case SHOW_NEXT_ALARM: case SHOW_BATTERY: case NEW_DOTS:
+                case SHOW_NEXT_ALARM: case SHOW_BATTERY: case NEW_DOTS: case DOCK_WRAP: case DOCK_HOME_RESET:
                     e.putBoolean(k, o.getBoolean(k));
                     break;
                 case SIDEBAR_LEFT_ITEMS: case SIDEBAR_RIGHT_ITEMS: {

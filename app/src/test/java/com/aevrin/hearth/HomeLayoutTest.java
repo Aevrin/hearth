@@ -179,7 +179,7 @@ public class HomeLayoutTest {
         l.move(w, H, 0, 0, 2);
         assertEquals(0, w.x);
         assertEquals(2, w.y);
-        l.move(w, D, 0, 0, 0); // never into the dock
+        l.move(w, D, 0, 0, 0); // two rows tall: not into the dock
         assertEquals(H, w.container);
         assertNoOverlaps(l);
     }
@@ -195,6 +195,79 @@ public class HomeLayoutTest {
         assertTrue(l.resizeItemTo(w, 0, 0, 2, 3));
         assertEquals(3, w.spanY);
         assertFalse(l.canResize(w, 0, 0, 2, 5)); // off the grid
+    }
+
+    /* ---------- widgets in the dock ---------- */
+
+    @Test
+    public void oneRowWidgetsFitInTheDock() {
+        HomeLayout l = load(4, 4, 1, 5, 1);
+        HomeLayout.Item w = l.addWidget(3, 0, 2, 1);
+        l.move(w, D, 0, 1, 0);
+        assertEquals(D, w.container);
+        assertEquals(1, w.x);
+        assertEquals(2, w.spanX);
+        assertEquals(1, w.spanY);
+        l.move(w, H, 0, 0, 3); // and back
+        assertEquals(H, w.container);
+        assertEquals(2, w.spanX);
+        assertEquals(1, w.spanY);
+        assertNoOverlaps(l);
+    }
+
+    @Test
+    public void tallWidgetsStayOutOfTheDock() {
+        HomeLayout l = load(4, 4, 1, 5, 1);
+        HomeLayout.Item w = l.addWidget(3, 0, 2, 2);
+        l.move(w, D, 0, 0, 0);
+        assertEquals(H, w.container);
+        assertEquals(2, w.spanY);
+    }
+
+    @Test
+    public void dockWidgetsDontOverlapIcons() {
+        HomeLayout l = load(4, 4, 1, 5, 1);
+        l.add("d", D, 0); // slot 0
+        HomeLayout.Item w = l.addWidget(3, 0, 2, 1);
+        l.move(w, D, 0, 0, 0); // would cover "d"
+        assertEquals(H, w.container);
+        l.move(w, D, 0, 1, 0);
+        assertEquals(D, w.container);
+        l.move(find(l, "d"), D, 0, 1, 0); // an icon can't swap onto a widget
+        assertAt(l, "d", D, 0, 0, 0);
+        assertNoOverlaps(l);
+    }
+
+    @Test
+    public void dockWidgetsSurviveReloadAndShrinkWithTheDock() {
+        HomeLayout l = load(4, 4, 1, 5, 1);
+        HomeLayout.Item w = l.addWidget(3, 0, 3, 1);
+        l.move(w, D, 0, 0, 0);
+        HomeLayout again = load(4, 4, 1, 5, 1);
+        HomeLayout.Item w2 = find(again, HomeLayout.WIDGET_PREFIX + 3);
+        assertEquals(D, w2.container);
+        assertEquals(3, w2.spanX);
+        HomeLayout fewer = load(4, 4, 1, 2, 1); // two slots now
+        HomeLayout.Item w3 = find(fewer, HomeLayout.WIDGET_PREFIX + 3);
+        assertEquals(D, w3.container);
+        assertEquals(2, w3.spanX);
+        assertNoOverlaps(fewer);
+    }
+
+    @Test
+    public void subgridWidgetsTranslateToDockSlots() {
+        HomeLayout l = load(4, 4, 1, 5, 2);
+        HomeLayout.Item w = l.addWidget(4, 0, 4, 2); // two cells wide, one row (in half cells)
+        l.move(w, D, 0, 0, 0);
+        assertEquals(D, w.container);
+        assertEquals(2, w.spanX);
+        assertEquals(1, w.spanY);
+        l.move(w, H, 0, 0, 4);
+        assertEquals(4, w.spanX);
+        assertEquals(2, w.spanY);
+        HomeLayout.Item tall = l.addWidget(5, 0, 2, 4); // two rows: no
+        l.move(tall, D, 0, 3, 0);
+        assertEquals(H, tall.container);
     }
 
     /* ---------- folders ---------- */

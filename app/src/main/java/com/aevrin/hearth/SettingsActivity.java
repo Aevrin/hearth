@@ -380,6 +380,9 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         toggle(R.string.show_dock, prefs.showDock(), prefs::setShowDock);
         stepper(R.string.dock_slots, prefs.dockSlots(), 3, 7, prefs::setDockSlots);
         stepper(R.string.dock_pages, prefs.dockPages(), 1, 3, prefs::setDockPages);
+        toggle(R.string.dock_wrap, prefs.dockWrap(), prefs::setDockWrap);
+        toggle(R.string.dock_home_reset, prefs.dockHomeReset(), prefs::setDockHomeReset);
+        note(R.string.dock_widget_note);
         choice(R.string.dock_icon_size, sizes(), prefs.dockIconSize(), prefs::setDockIconSize);
     }
 

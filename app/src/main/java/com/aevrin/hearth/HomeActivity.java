@@ -424,8 +424,12 @@ public class HomeActivity extends Activity
             folders.close();
         } else if (drawerOpen) {
             closeDrawer();
-        } else if (currentPage != prefs.defaultPage()) {
-            animateToPage(prefs.defaultPage());
+        } else {
+            if (currentPage != prefs.defaultPage()) animateToPage(prefs.defaultPage());
+            // And the dock back to its first page (optional, on by default).
+            if (prefs.dockHomeReset() && currentDockPage != 0) {
+                slide(dock, -1, () -> currentDockPage = 0);
+            }
         }
     }
 
@@ -1012,7 +1016,7 @@ public class HomeActivity extends Activity
                 v = widgetView(item);
                 v.setTag(R.id.home_item, item);
                 v.setOnLongClickListener(view -> { onItemLongPress(item, view); return true; });
-                grid.addView(v, new CellLayout.LayoutParams(item.x, item.y, item.spanX, item.spanY));
+                parent.addView(v, new CellLayout.LayoutParams(item.x, item.y, item.spanX, item.spanY));
                 continue;
             } else if (folder != null) {
                 v = makeFolderIcon(folder, parent, label, inDock ? dockIcon : gridIcon);
@@ -1079,9 +1083,14 @@ public class HomeActivity extends Activity
     }
 
     private boolean flipDockPage(int direction) {
+        int n = layout.dockPages();
         int target = currentDockPage + direction;
-        if (target < 0 || target >= layout.dockPages()) return false;
-        slide(dock, direction, () -> currentDockPage = target);
+        if (target < 0 || target >= n) {
+            if (!prefs.dockWrap() || n < 2) return false;
+            target = (target + n) % n; // infinite scroll: round to the other end
+        }
+        int to = target;
+        slide(dock, direction, () -> currentDockPage = to);
         return true;
     }
 
@@ -1360,11 +1369,12 @@ public class HomeActivity extends Activity
     private void startDrag(DragState st) {
         st.startX = lastTouchX;
         st.startY = lastTouchY;
-        if (st.item != null && isBig(st.item) && grid.cellWidth() > 0) {
+        CellLayout from = st.item != null && HomeLayout.DOCK.equals(st.item.container) ? dock : grid;
+        if (st.item != null && isBig(st.item) && from.cellWidth() > 0) {
             int[] loc = new int[2];
             st.view.getLocationOnScreen(loc);
-            st.grabX = Math.max(0, Math.min(st.item.spanX - 1, (int) ((st.startX - loc[0]) / grid.cellWidth())));
-            st.grabY = Math.max(0, Math.min(st.item.spanY - 1, (int) ((st.startY - loc[1]) / grid.cellHeight())));
+            st.grabX = Math.max(0, Math.min(st.item.spanX - 1, (int) ((st.startX - loc[0]) / from.cellWidth())));
+            st.grabY = Math.max(0, Math.min(st.item.spanY - 1, (int) ((st.startY - loc[1]) / from.cellHeight())));
         }
         int[] at = new int[2];
         st.view.getLocationOnScreen(at);
@@ -1404,11 +1414,16 @@ public class HomeActivity extends Activity
         int[] cell = target.cellAt(x, y);
         if (st.item != null && isBig(st.item)) {
             // A widget: its top-left follows the finger; it only goes where it fits in free cells.
-            int tx = Math.max(0, Math.min(layout.columns() - st.item.spanX, cell[0] - st.grabX));
-            int ty = Math.max(0, Math.min(layout.rows() - st.item.spanY, cell[1] - st.grabY));
-            boolean ok = HomeLayout.HOME.equals(container)
-                    && layout.fitsItem(st.item, container, page, tx, ty)
-                    && layout.areaFree(container, page, tx, ty, st.item.spanX, st.item.spanY, st.item);
+            // In the dock (one-row widgets only) it's measured in dock slots.
+            int[] sp = layout.spanIn(st.item, container);
+            if (sp == null) return new int[] {CellLayout.HL_NONE, cell[0], cell[1], page};
+            boolean toDock = HomeLayout.DOCK.equals(container);
+            int cols = toDock ? layout.dockSlots() : layout.columns(), rws = toDock ? 1 : layout.rows();
+            int gx = Math.min(st.grabX, sp[0] - 1), gy = Math.min(st.grabY, sp[1] - 1);
+            int tx = Math.max(0, Math.min(cols - sp[0], cell[0] - gx));
+            int ty = Math.max(0, Math.min(rws - sp[1], cell[1] - gy));
+            boolean ok = layout.fitsArea(container, page, tx, ty, sp[0], sp[1])
+                    && layout.areaFree(container, page, tx, ty, sp[0], sp[1], st.item);
             return new int[] {ok ? CellLayout.HL_MOVE : CellLayout.HL_NONE, tx, ty, page};
         }
         int span = layout.iconSpan(container);
@@ -1449,7 +1464,9 @@ public class HomeActivity extends Activity
                 int[] plan = dropPlan(target, container, st, e.getX(), e.getY());
                 boolean big = st.item != null && isBig(st.item);
                 int span = layout.iconSpan(container);
-                target.setHighlight(plan[1], plan[2], big ? st.item.spanX : span, big ? st.item.spanY : span, plan[0]);
+                int[] sp = big ? layout.spanIn(st.item, container) : null;
+                if (sp == null) sp = new int[] {span, span};
+                target.setHighlight(plan[1], plan[2], sp[0], sp[1], plan[0]);
                 if (plan[0] == CellLayout.HL_INSERT) previewInsert(target, container, st, plan[3], plan[1], plan[2]);
                 else clearPreview();
                 return true;
@@ -2188,14 +2205,18 @@ public class HomeActivity extends Activity
      */
     private void resizeWidget(HomeLayout.Item item, AppWidgetProviderInfo info) {
         endResize();
+        // A dock widget resizes along the dock (one row, in dock slots).
+        boolean inDock = HomeLayout.DOCK.equals(item.container);
+        CellLayout cl = inDock ? dock : grid;
+        int cols = inDock ? layout.dockSlots() : layout.columns(), rws = inDock ? 1 : layout.rows();
         boolean horiz = (info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0;
-        boolean vert = (info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0;
-        int minW = horiz ? cellsFor(Math.max(1, info.minResizeWidth), grid.cellWidth(), layout.columns()) : item.spanX;
-        int minH = vert ? cellsFor(Math.max(1, info.minResizeHeight), grid.cellHeight(), layout.rows()) : item.spanY;
+        boolean vert = !inDock && (info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0;
+        int minW = horiz ? cellsFor(Math.max(1, info.minResizeWidth), cl.cellWidth(), cols) : item.spanX;
+        int minH = vert ? cellsFor(Math.max(1, info.minResizeHeight), cl.cellHeight(), rws) : item.spanY;
         int maxW = horiz ? (info.maxResizeWidth > 0
-                ? cellsFor(info.maxResizeWidth, grid.cellWidth(), layout.columns()) : layout.columns()) : item.spanX;
+                ? cellsFor(info.maxResizeWidth, cl.cellWidth(), cols) : cols) : item.spanX;
         int maxH = vert ? (info.maxResizeHeight > 0
-                ? cellsFor(info.maxResizeHeight, grid.cellHeight(), layout.rows()) : layout.rows()) : item.spanY;
+                ? cellsFor(info.maxResizeHeight, cl.cellHeight(), rws) : rws) : item.spanY;
         resizing = item;
         resizeFrame = new ResizeFrame(this, new ResizeFrame.Host() {
             @Override public boolean canPlace(int x, int y, int w, int h) {
@@ -2207,8 +2228,8 @@ public class HomeActivity extends Activity
                 return true;
             }
             @Override public void preview(int x, int y, int w, int h, boolean ok) {
-                if (x < 0) grid.clearHighlight();
-                else grid.setHighlight(x, y, w, h, ok ? CellLayout.HL_MOVE : CellLayout.HL_NONE);
+                if (x < 0) cl.clearHighlight();
+                else cl.setHighlight(x, y, w, h, ok ? CellLayout.HL_MOVE : CellLayout.HL_NONE);
             }
             @Override public void done() {
                 endResize();
@@ -2236,10 +2257,10 @@ public class HomeActivity extends Activity
         resizeFrame.setAccent(prefs.accent());
         int[] g = new int[2], r = new int[2];
         View root = findViewById(R.id.root);
-        grid.getLocationInWindow(g);
+        cl.getLocationInWindow(g);
         root.getLocationInWindow(r);
-        resizeFrame.setGrid(g[0] - r[0] + grid.getPaddingLeft(), g[1] - r[1] + grid.getPaddingTop(),
-                grid.cellWidth(), grid.cellHeight(), layout.columns(), layout.rows());
+        resizeFrame.setGrid(g[0] - r[0] + cl.getPaddingLeft(), g[1] - r[1] + cl.getPaddingTop(),
+                cl.cellWidth(), cl.cellHeight(), cols, rws);
         resizeFrame.setWidget(item.x, item.y, item.spanX, item.spanY, minW, minH, maxW, maxH, horiz, vert);
         ((ViewGroup) root).addView(resizeFrame, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -2257,6 +2278,7 @@ public class HomeActivity extends Activity
         resizeFrame = null;
         resizing = null;
         grid.clearHighlight();
+        dock.clearHighlight();
     }
 
     private void pickWallpaper() {
