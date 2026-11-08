@@ -458,11 +458,51 @@ public class HomeActivity extends Activity
 
     @Override
     public void onAppsChanged() {
+        pruneUninstalled();
         adapter.setApps(repo.apps());
         refreshAlpha();
         refreshHome();
         folders.refresh();
         sidebar.refresh();
+    }
+
+    /**
+     * Clears uninstalled apps (and their shortcuts) out of the home screen, dock,
+     * folders and sidebars. Only keys whose app is missing from the list are
+     * checked, and only a real uninstall counts (see AppRepository.isPackageGone).
+     */
+    private void pruneUninstalled() {
+        if (!repo.isLoaded()) return;
+        java.util.Set<String> present = new java.util.HashSet<>();
+        for (AppEntry e : repo.apps()) {
+            String[] p = Targets.packageOf(e.key);
+            if (p != null) present.add(p[0] + "#" + p[1]);
+        }
+        java.util.Map<String, Boolean> checked = new java.util.HashMap<>();
+        java.util.function.Predicate<String> gone = key -> {
+            String[] p = Targets.packageOf(key);
+            if (p == null) return false;
+            String id = p[0] + "#" + p[1];
+            if (present.contains(id)) return false;
+            return checked.computeIfAbsent(id, k -> {
+                try {
+                    return repo.isPackageGone(p[0], Long.parseLong(p[1]));
+                } catch (NumberFormatException ex) {
+                    return false;
+                }
+            });
+        };
+        java.util.Set<String> dead = new java.util.HashSet<>();
+        for (String key : layout.allKeys()) if (gone.test(key)) dead.add(key);
+        boolean changed = layout.removeEverywhere(dead);
+        for (String side : new String[] {Prefs.SIDEBAR_LEFT, Prefs.SIDEBAR_RIGHT}) {
+            java.util.List<String> entries = prefs.sidebarItems(side);
+            if (entries.removeIf(gone)) {
+                prefs.setSidebarItems(side, entries);
+                changed = true;
+            }
+        }
+        if (changed) syncPins();
     }
 
     /* ---------- FolderPanel.Host ---------- */

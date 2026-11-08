@@ -474,6 +474,32 @@ final class HomeLayout {
         save();
     }
 
+    /**
+     * Takes keys out everywhere: the home screen, the dock and every folder (used
+     * when apps are uninstalled). A folder left empty is deleted; one left with a
+     * single entry turns back into it. Returns whether anything changed.
+     */
+    boolean removeEverywhere(Set<String> keys) {
+        if (keys.isEmpty()) return false;
+        boolean changed = items.removeIf(it -> keys.contains(it.key));
+        for (java.util.Iterator<Folder> i = folders.values().iterator(); i.hasNext(); ) {
+            Folder f = i.next();
+            if (!f.apps.removeAll(keys)) continue;
+            changed = true;
+            if (f.icon != null && f.icon.startsWith("app:") && keys.contains(f.icon.substring(4))) f.icon = null;
+            Item folderItem = itemFor(f);
+            if (f.apps.isEmpty()) {
+                if (folderItem != null) items.remove(folderItem);
+                i.remove();
+            } else if (f.apps.size() == 1 && folderItem != null) {
+                folderItem.key = f.apps.get(0);
+                i.remove();
+            }
+        }
+        if (changed) save();
+        return changed;
+    }
+
     /* ---------- pages ---------- */
 
     /** Adds an empty home page at `index`, shifting later pages along. */

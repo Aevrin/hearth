@@ -42,6 +42,23 @@ final class Targets {
         return spec != null && (spec.startsWith(APP) || spec.startsWith(ACTIVITY) || Shortcuts.isShortcutKey(spec));
     }
 
+    /**
+     * The package and profile serial behind an app key ("pkg/.Activity#serial"),
+     * a target or a shortcut key, as {pkg, serial}; null if it can't be read.
+     */
+    static String[] packageOf(String key) {
+        if (key == null) return null;
+        if (Shortcuts.isShortcutKey(key)) {
+            String[] p = Shortcuts.parse(key);
+            return p == null ? null : new String[] {p[1], p[0]};
+        }
+        String app = isTarget(key) ? appKeyOf(key) : key;
+        if (app == null) return null;
+        int slash = app.indexOf('/'), hash = app.lastIndexOf('#');
+        if (slash <= 0 || hash < slash) return null;
+        return new String[] {app.substring(0, slash), app.substring(hash + 1)};
+    }
+
     private static String appKeyOf(String spec) {
         if (spec.startsWith(APP)) return spec.substring(APP.length());
         if (spec.startsWith(ACTIVITY)) {

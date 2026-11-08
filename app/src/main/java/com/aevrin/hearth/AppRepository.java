@@ -97,6 +97,26 @@ final class AppRepository {
 
     AppEntry find(String key) { return byKey.get(key); }
 
+    /**
+     * Whether a package is really gone from a profile (uninstalled, or the profile
+     * removed). A paused work profile hides its apps without removing them, and an
+     * app mid-update is still installed, so neither counts.
+     */
+    boolean isPackageGone(String pkg, long serial) {
+        UserHandle user = userManager.getUserForSerialNumber(serial);
+        if (user == null) return true;
+        try {
+            if (userManager.isQuietModeEnabled(user)) return false;
+            launcherApps.getApplicationInfo(pkg, android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS
+                    | android.content.pm.PackageManager.MATCH_DISABLED_UNTIL_USED_COMPONENTS, user);
+            return false;
+        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+            return true;
+        } catch (RuntimeException e) {
+            return false; // profile locked or not ours to ask: leave it be
+        }
+    }
+
     /** Rescans every profile in the background, then notifies on the main thread. */
     void reload() {
         worker.execute(() -> {

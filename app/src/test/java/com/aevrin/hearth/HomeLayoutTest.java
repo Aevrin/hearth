@@ -438,4 +438,40 @@ public class HomeLayoutTest {
         l.move(d, D, 0, 1, 0);
         assertEquals(1, d.spanX);
     }
+
+    /* ---------- uninstalls ---------- */
+
+    @Test public void uninstallingEveryAppInAFolderDeletesIt() {
+        HomeLayout l = load(4, 4, 1, 4, 1);
+        l.add("a", H, 0); l.add("b", H, 0); l.add("c", H, 0);
+        HomeLayout.Folder f = l.createFolder(find(l, "a"), "b", find(l, "b"), "Old");
+        l.addToFolder(f, "c", find(l, "c"));
+        assertTrue(l.removeEverywhere(new java.util.HashSet<>(Arrays.asList("a", "b", "c"))));
+        assertTrue(l.items().isEmpty());
+        assertTrue(l.allKeys().isEmpty());
+        HomeLayout again = load(4, 4, 1, 4, 1);
+        assertTrue(again.items().isEmpty());
+    }
+
+    @Test public void uninstallingAllButOneTurnsTheFolderBackIntoThatApp() {
+        HomeLayout l = load(4, 4, 1, 4, 1);
+        l.add("a", D, 0); l.add("b", D, 0); l.add("c", D, 0);
+        HomeLayout.Item a = find(l, "a");
+        HomeLayout.Folder f = l.createFolder(a, "b", find(l, "b"), "");
+        l.addToFolder(f, "c", find(l, "c"));
+        int x = a.x;
+        l.removeEverywhere(new java.util.HashSet<>(Arrays.asList("a", "b")));
+        assertAt(l, "c", D, 0, x, 0);
+        assertEquals(1, l.items().size());
+    }
+
+    @Test public void uninstallingClearsHomeAndDockButLeavesTheRest() {
+        HomeLayout l = load(4, 4, 1, 4, 1);
+        l.add("a", H, 0); l.add("b", D, 0); l.add("c", H, 0);
+        assertTrue(l.removeEverywhere(new java.util.HashSet<>(Arrays.asList("a", "b"))));
+        assertNull(find(l, "a"));
+        assertNull(find(l, "b"));
+        assertNotNull(find(l, "c"));
+        assertFalse(l.removeEverywhere(new java.util.HashSet<>(Arrays.asList("zzz"))));
+    }
 }

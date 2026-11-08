@@ -146,7 +146,9 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - **Backup:** save every setting plus the home layout to a JSON file, and restore it.
 - Renamed apps keep their new name everywhere, and search finds both names.
 - Work-profile apps are included, with the usual briefcase badge.
-- Installs, updates and uninstalls show up straight away.
+- Installs, updates and uninstalls show up straight away. An uninstalled app is cleared from the home screen, dock,
+  folders and sidebars; a folder left empty is deleted, and one left with a single app turns back into it.
+  (Updates and a paused work profile leave everything in place.)
 
 ### Roadmap / ideas
 
