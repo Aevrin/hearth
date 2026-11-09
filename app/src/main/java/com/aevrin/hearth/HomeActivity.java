@@ -459,11 +459,32 @@ public class HomeActivity extends Activity
     @Override
     public void onAppsChanged() {
         pruneUninstalled();
+        placeNewInstalls();
         adapter.setApps(repo.apps());
         refreshAlpha();
         refreshHome();
         folders.refresh();
         sidebar.refresh();
+    }
+
+    /**
+     * With "Add newly installed apps" on, puts each freshly installed app in the
+     * first free home spot from the default page. Only real installs count (not
+     * updates, a work profile coming back, or the first load); an app already on
+     * the home screen or in a folder is left where it is.
+     */
+    private void placeNewInstalls() {
+        java.util.Set<String> added = repo.takeInstalled();
+        if (added.isEmpty() || !prefs.addNewApps()) return;
+        boolean changed = false;
+        java.util.Set<String> hidden = prefs.hidden();
+        for (AppEntry e : repo.apps()) {
+            String[] p = Targets.packageOf(e.key);
+            if (p == null || !added.contains(p[0] + "#" + p[1]) || layout.contains(e.key)) continue;
+            if (hidden.contains(e.key)) continue;
+            changed |= layout.add(e.key, HomeLayout.HOME, prefs.defaultPage());
+        }
+        if (changed) syncPins();
     }
 
     /**
@@ -1074,8 +1095,8 @@ public class HomeActivity extends Activity
             parent.addView(v, new CellLayout.LayoutParams(item.x, item.y, item.spanX, item.spanY));
         }
         emptyHint.setVisibility(layout.isEmpty() ? View.VISIBLE : View.GONE);
-        dots(pageDots, layout.pages(), currentPage, 7);
-        dots(dockDots, layout.dockPages(), currentDockPage, 5);
+        dots(pageDots, prefs.pageDots() ? layout.pages() : 0, currentPage, 7);
+        dots(dockDots, prefs.dockDots() ? layout.dockPages() : 0, currentDockPage, 5);
         if (dock.getVisibility() != View.VISIBLE) dockDots.setVisibility(View.GONE);
     }
 

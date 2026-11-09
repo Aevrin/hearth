@@ -308,6 +308,8 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         stepper(R.string.home_pages, prefs.pages(), 1, 7, prefs::setPages);
         toggle(R.string.subgrid, prefs.subgrid(), prefs::setSubgrid);
         toggle(R.string.lock_layout_setting, prefs.lockLayout(), prefs::setLockLayout);
+        toggle(R.string.add_new_apps, prefs.addNewApps(), prefs::setAddNewApps);
+        toggle(R.string.page_dots, prefs.pageDots(), prefs::setPageDots);
         toggle(R.string.scroll_wallpaper, prefs.scrollWallpaper(), prefs::setScrollWallpaper);
         toggle(R.string.allow_rotation, prefs.allowRotation(), prefs::setAllowRotation);
         note(R.string.layout_note);
@@ -382,6 +384,7 @@ public class SettingsActivity extends Activity implements AppRepository.Listener
         stepper(R.string.dock_pages, prefs.dockPages(), 1, 3, prefs::setDockPages);
         toggle(R.string.dock_wrap, prefs.dockWrap(), prefs::setDockWrap);
         toggle(R.string.dock_home_reset, prefs.dockHomeReset(), prefs::setDockHomeReset);
+        toggle(R.string.dock_dots, prefs.dockDots(), prefs::setDockDots);
         note(R.string.dock_widget_note);
         choice(R.string.dock_icon_size, sizes(), prefs.dockIconSize(), prefs::setDockIconSize);
     }

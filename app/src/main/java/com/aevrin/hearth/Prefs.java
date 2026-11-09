@@ -107,6 +107,9 @@ final class Prefs {
     static final String DRAWER_SORT = "drawer_sort";
     static final String DOCK_WRAP = "dock_wrap";
     static final String DOCK_HOME_RESET = "dock_home_reset";
+    static final String ADD_NEW_APPS = "add_new_apps";
+    static final String PAGE_DOTS = "page_dots";
+    static final String DOCK_DOTS = "dock_dots";
     static final int SORT_AZ = 0, SORT_MOST_USED = 1, SORT_RECENT = 2;
     /** How long a newly installed app keeps its dot (unless opened sooner). */
     static final long NEW_FOR_MS = 3L * 24 * 60 * 60 * 1000;
@@ -329,6 +332,14 @@ final class Prefs {
     /** Home on the home screen also returns the dock to its first page. */
     boolean dockHomeReset() { return sp.getBoolean(DOCK_HOME_RESET, true); }
     void setDockHomeReset(boolean v) { sp.edit().putBoolean(DOCK_HOME_RESET, v).apply(); }
+    /** Newly installed apps go onto the home screen too (first free spot). */
+    boolean addNewApps() { return sp.getBoolean(ADD_NEW_APPS, false); }
+    void setAddNewApps(boolean v) { sp.edit().putBoolean(ADD_NEW_APPS, v).apply(); }
+    /** Page indicators under the home screen and the dock. */
+    boolean pageDots() { return sp.getBoolean(PAGE_DOTS, true); }
+    void setPageDots(boolean v) { sp.edit().putBoolean(PAGE_DOTS, v).apply(); }
+    boolean dockDots() { return sp.getBoolean(DOCK_DOTS, true); }
+    void setDockDots(boolean v) { sp.edit().putBoolean(DOCK_DOTS, v).apply(); }
 
     boolean showNextAlarm() { return sp.getBoolean(SHOW_NEXT_ALARM, false); }
     void setShowNextAlarm(boolean v) { sp.edit().putBoolean(SHOW_NEXT_ALARM, v).apply(); }
@@ -686,6 +697,9 @@ final class Prefs {
         o.put(DRAWER_SORT, drawerSort());
         o.put(DOCK_WRAP, dockWrap());
         o.put(DOCK_HOME_RESET, dockHomeReset());
+        o.put(ADD_NEW_APPS, addNewApps());
+        o.put(PAGE_DOTS, pageDots());
+        o.put(DOCK_DOTS, dockDots());
         o.put(SIDEBAR_LEFT_ITEMS, new org.json.JSONArray(sidebarItems(SIDEBAR_LEFT)));
         for (String side : BG_SURFACES) {
             o.put(side + BG_MODE, bgMode(side));
@@ -791,6 +805,7 @@ final class Prefs {
                 case ACCENT_GRADIENT: case SUBGRID: case SEARCH_ON_PULL:
                 case SIDEBAR_LEFT: case SIDEBAR_RIGHT: case SIDEBAR_HANDLE_SHOWN:
                 case SHOW_NEXT_ALARM: case SHOW_BATTERY: case NEW_DOTS: case DOCK_WRAP: case DOCK_HOME_RESET:
+                case ADD_NEW_APPS: case PAGE_DOTS: case DOCK_DOTS:
                     e.putBoolean(k, o.getBoolean(k));
                     break;
                 case SIDEBAR_LEFT_ITEMS: case SIDEBAR_RIGHT_ITEMS: {

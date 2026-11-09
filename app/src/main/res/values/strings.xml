@@ -341,6 +341,9 @@
 
     <!-- Dock -->
     <string name="dock_wrap">Infinite scroll (last page goes round to the first)</string>
+    <string name="add_new_apps">Add newly installed apps to the home screen</string>
+    <string name="page_dots">Page indicator</string>
+    <string name="dock_dots">Dock page indicator</string>
     <string name="dock_home_reset">Home button returns the dock to page 1</string>
     <string name="dock_widget_note">Widgets one row tall can be dragged into the dock; they take as many slots as they are wide, and resize sideways there.</string>
 </resources>

@@ -65,9 +65,15 @@ final class AppRepository {
     private int themeGeneration; // icons rendered under an older theme are discarded
     private Map<String, ShortcutInfo> pinned = Collections.emptyMap(); // shortcuts this launcher has pinned
 
+    /** "pkg#serial" of fresh installs since last asked (updates don't come through here). */
+    private final java.util.Set<String> installed = new java.util.HashSet<>();
+
     private final LauncherApps.Callback packageCallback = new LauncherApps.Callback() {
         @Override public void onPackageRemoved(String pkg, UserHandle user) { changed(pkg); }
-        @Override public void onPackageAdded(String pkg, UserHandle user) { changed(pkg); }
+        @Override public void onPackageAdded(String pkg, UserHandle user) {
+            synchronized (installed) { installed.add(pkg + "#" + userManager.getSerialNumberForUser(user)); }
+            changed(pkg);
+        }
         @Override public void onPackageChanged(String pkg, UserHandle user) { changed(pkg); }
         @Override public void onPackagesAvailable(String[] pkgs, UserHandle user, boolean replacing) { changed(pkgs); }
         @Override public void onPackagesUnavailable(String[] pkgs, UserHandle user, boolean replacing) { changed(pkgs); }
@@ -96,6 +102,15 @@ final class AppRepository {
     List<AppEntry> apps() { return apps; }
 
     AppEntry find(String key) { return byKey.get(key); }
+
+    /** Fresh installs since the last call, as "pkg#serial"; clears the list. */
+    java.util.Set<String> takeInstalled() {
+        synchronized (installed) {
+            java.util.Set<String> out = new java.util.HashSet<>(installed);
+            installed.clear();
+            return out;
+        }
+    }
 
     /**
      * Whether a package is really gone from a profile (uninstalled, or the profile

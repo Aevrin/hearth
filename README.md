@@ -95,7 +95,8 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
     phone, shows as "Widget unavailable" until you remove it.
 - **Dock:** label-less icons on a translucent bar, with up to three **dock pages** you swipe
   across the dock itself (optionally **infinite**, going round from the last to the first). Home
-  returns the dock to its first page (switchable). **One-row widgets** can be dragged into the dock,
+  returns the dock to its first page (switchable). The page dots under the home screen and the
+  dock can each be turned off. **One-row widgets** can be dragged into the dock,
   taking as many slots as they're wide, and resized sideways there. When the dock is hidden, an
   arrow at the bottom opens the drawer.
 - **App drawer:** swipe up anywhere on the home screen.
@@ -146,7 +147,8 @@ A small, private, open-source Android launcher, in the spirit of classic Nova La
   - **Backup:** save every setting plus the home layout to a JSON file, and restore it.
 - Renamed apps keep their new name everywhere, and search finds both names.
 - Work-profile apps are included, with the usual briefcase badge.
-- Installs, updates and uninstalls show up straight away. An uninstalled app is cleared from the home screen, dock,
+- Installs, updates and uninstalls show up straight away. New apps go to the drawer only, unless
+  **Add newly installed apps to the home screen** is on (Settings → Home; off by default). An uninstalled app is cleared from the home screen, dock,
   folders and sidebars; a folder left empty is deleted, and one left with a single app turns back into it.
   (Updates and a paused work profile leave everything in place.)
 
