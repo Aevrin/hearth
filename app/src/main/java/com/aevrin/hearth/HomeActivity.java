@@ -159,6 +159,9 @@ public class HomeActivity extends Activity
     private int homeIconPx, dockIconPx, drawerIconPx;
     private float wallpaperPage;   // animated page position for wallpaper scrolling
     private float lastTouchX, lastTouchY; // screen coordinates of the latest press
+    // Whether the current touch started on something inside a widget that scrolls
+    // that way (a list, a scroll view). Swipes there belong to the widget, not to us.
+    private boolean pressOnScrollV, pressOnScrollH;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable pendingEdgeFlip;
@@ -301,6 +304,7 @@ public class HomeActivity extends Activity
                 float dy = e2.getY() - e1.getY();
                 if (Math.abs(vx) > Math.abs(vy)) {
                     if (drawerOpen || Math.abs(vx) < 600 || Math.abs(dx) < dp(60)) return false;
+                    if (pressOnScrollH) return false; // a sideways-scrolling widget's own swipe
                     int dir = dx < 0 ? 1 : -1;
                     if (layout.dockPages() > 1 && dock.getVisibility() == View.VISIBLE
                             && dock.getGlobalVisibleRect(scratch)
@@ -312,6 +316,9 @@ public class HomeActivity extends Activity
                     return runGesture(prefs.gesture(dir > 0 ? Prefs.GESTURE_LEFT : Prefs.GESTURE_RIGHT));
                 }
                 if (Math.abs(vy) < 800) return false;
+                // Flicking a widget's list: scroll it, don't open the drawer. Gestures run at
+                // the window level, before the widget sees the touch, so this has to be checked here.
+                if (!drawerOpen && pressOnScrollV) return false;
                 if (!drawerOpen && dy < -dp(60)) return runGesture(prefs.gesture(Prefs.GESTURE_UP));
                 if (!drawerOpen && dy > dp(60)) return runGesture(prefs.gesture(Prefs.GESTURE_DOWN));
                 if (drawerOpen && dy > dp(60) && !drawerList.canScrollVertically(-1)) {
@@ -441,6 +448,8 @@ public class HomeActivity extends Activity
         if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
             lastTouchX = ev.getRawX();
             lastTouchY = ev.getRawY();
+            pressOnScrollV = scrollsAt(ev.getRawX(), ev.getRawY(), true);
+            pressOnScrollH = scrollsAt(ev.getRawX(), ev.getRawY(), false);
         }
         if (pendingDrag != null) trackPendingDrag(ev);
         if (trackSidebarEdge(ev)) return true;
@@ -906,6 +915,40 @@ public class HomeActivity extends Activity
             default:
                 break;
         }
+    }
+
+    /**
+     * Whether a widget under this screen point has a view there that can scroll
+     * (vertically or horizontally), like Launcher3's "scrollable widget" check.
+     * A list too short to scroll doesn't count, so swiping up on it still opens the drawer.
+     */
+    private boolean scrollsAt(float rawX, float rawY, boolean vertical) {
+        if (drawerOpen) return false;
+        for (CellLayout cl : new CellLayout[] {grid, dock}) {
+            for (int i = 0; i < cl.getChildCount(); i++) {
+                View child = cl.getChildAt(i);
+                if (!(child instanceof ViewGroup) || !containsRaw(child, rawX, rawY)) continue;
+                if (hasScrollableAt((ViewGroup) child, rawX, rawY, vertical)) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasScrollableAt(ViewGroup group, float rawX, float rawY, boolean vertical) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View v = group.getChildAt(i);
+            if (v.getVisibility() != View.VISIBLE || !containsRaw(v, rawX, rawY)) continue;
+            boolean scrolls = vertical
+                    ? v.canScrollVertically(1) || v.canScrollVertically(-1)
+                    : v.canScrollHorizontally(1) || v.canScrollHorizontally(-1);
+            if (scrolls) return true;
+            if (v instanceof ViewGroup && hasScrollableAt((ViewGroup) v, rawX, rawY, vertical)) return true;
+        }
+        return false;
+    }
+
+    private boolean containsRaw(View v, float rawX, float rawY) {
+        return v.getGlobalVisibleRect(scratch) && scratch.contains((int) rawX, (int) rawY);
     }
 
     /** Whether a screen point is on an icon, folder or widget (double-tap only counts on empty space). */
